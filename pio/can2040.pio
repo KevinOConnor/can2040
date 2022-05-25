@@ -1,0 +1,159 @@
+// Reference code for rp2040 PIO handlers
+//
+// Copyright (C) 2022  Kevin O'Connor <kevin@koconnor.net>
+//
+// This file may be distributed under the terms of the GNU GPLv3 license.
+
+.program can2040
+
+// State machine "sync" code - clock and start/end of message signaling
+sync_recessive_edge:
+    jmp y--, sync_scan_edge     ; cp=15,17,19
+    jmp x--, sync_signal_sample ; cp=4
+sync_found_end_of_message:
+    set x, 28
+sync_loop_end_of_message:
+    jmp pin sync_check_idle
+public sync_signal_start:
+    irq set 0
+sync_scan_edge:
+    jmp pin sync_recessive_edge ; cp=14,16,18
+public sync_entry:
+    irq clear 0                 ; cp=1
+sync_got_dominant:
+    set x, 8               [2]  ; cp=2
+sync_signal_sample:
+    set y, 2               [2]  ; cp=5
+    irq set 4              [1]  ; cp=8
+    jmp pin sync_scan_edge [3]  ; cp=10
+    jmp sync_got_dominant  [3]  ; cp=14
+sync_check_idle:
+    jmp x-- sync_loop_end_of_message
+public sync_end:
+    ;jmp sync_signal_start      ; wrap based jump
+
+// State machine "rx" code - forward data to cpu
+public shared_rx_read:
+    wait 1 irq 4
+    in pins, 1                  ; cp=10
+public shared_rx_end:
+    ;jmp shared_rx_read         ; wrap based jump
+
+// State machine "ack" code - inject properly timed ack bits if crc match
+    mov y, isr                  ; cp=11
+    jmp x!=y ack_no_match       ; cp=12
+ack_signal_inject:
+    irq set 2                   ; cp=13
+public ack_no_match:
+    in osr, 11                  ; load next_counter and bits into isr
+    in y, 20
+    mov y, osr
+ack_check_next:
+    pull noblock                ; reload target_compare into x
+    mov x, osr
+    jmp y-- f2                  ; setup next_counter
+ f2:mov osr, y
+public ack_end:
+    ;jmp shared_rx_read         ; wrap based jump
+
+// State machine "tx" code - write messages to bus
+tx_loop:
+    nop                    [2]  ; cp=11
+public tx_start:
+    out x, 1                    ; cp=14
+    mov pins, x                 ; cp=15
+    wait 1 irq 4
+    jmp pin tx_loop             ; cp=10
+    jmp !x tx_start        [2]  ; cp=11
+tx_error:
+    irq wait 3
+
+
+//
+//  Setup code (reference only)
+//
+
+// Setup for "sync" state machine
+.program sm_sync_setup
+    set pindirs, 0
+    ;jmp sync_got_dominant
+
+// Setup for "rx" state machine
+.program sm_rx_setup
+    ;jmp shared_rx_read
+
+// Setup for "ack" state machine
+.program sm_ack_setup
+    set y, 0
+    mov osr, y
+    mov x, !y
+    ;jmp ack_no_match
+
+// Setup for "tx" state machine
+.program sm_tx_setup
+    set pins, 1
+    set pindirs, 1
+
+// Transmit sequence for "tx" state machine
+.program sm_tx_transmit
+    // CPU first disables state machine execution
+    // CPU then loads tx fifos with full (bitstuffed) message
+    ;jmp tx_start
+    wait 1 irq 0
+    // CPU then starts state machine execution
+
+// Transmit sequence for "tx" state machine ack injection
+.program sm_tx_ack
+    // CPU first disables state machine execution
+    // CPU then loads tx fifo with ack (single off bit)
+    ;jmp tx_start
+    irq clear 2
+    wait 1 irq 2
+    // CPU then starts state machine execution
+    // CPU then loads ack fifo with CRC/position sequence to check
+
+
+//
+// Reference "sync" state machine without code size reduction hacks
+//
+
+.program reference_sync_sm
+
+sync_got_dominant:
+    set x, 8
+    jmp sync_signal_sample
+
+sync_signal_sample:
+    irq set 4              [1]  ; cp=8
+    jmp pin sync_scan_edge      ; cp=10
+    jmp sync_got_dominant  [3]  ; cp=14
+
+sync_scan_edge:
+    set y, 2
+sync_loop_scan_edge:
+    jmp pin sync_recessive_edge
+    jmp sync_got_dominant
+sync_recessive_edge:
+    jmp y--, sync_loop_scan_edge
+    jmp x--, sync_signal_sample
+    jmp sync_found_end_of_message
+
+sync_found_end_of_message:
+    set x, 28
+sync_loop_end_of_message:
+    jmp pin sync_check_idle
+    jmp sync_signal_start
+sync_check_idle:
+    jmp x-- sync_loop_end_of_message
+    jmp sync_found_idle
+
+sync_found_idle:
+    irq set 0
+sync_loop_idle:
+    jmp pin sync_loop_idle
+    jmp sync_signal_start
+
+sync_signal_start:
+    irq set 0
+    irq clear 0
+    jmp sync_got_dominant
