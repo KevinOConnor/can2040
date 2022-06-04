@@ -6,27 +6,37 @@
 
 .program can2040
 
+// This is the main PIO code for the can2040 CANbus software.  The
+// code is convoluted due to space constraints of the PIO (a max of 32
+// instructions).
+
+// This implementation is designed to run at 32 times the bitrate.
+// The "cp=" comments in the code indicate the "clock phase" - which
+// ranges from 0 to 31 (32 is 0 again).  At "cp=0" a one to zero edge
+// is first detected, at "cp=26" is the sampling point, and "cp=31"
+// output changes are made (so that they are observed by "cp=32").
+
 // State machine "sync" code - clock and start/end of message signaling
 sync_recessive_edge:
-    jmp y--, sync_scan_edge     ; cp=15,17,19
+    jmp y--, sync_scan_edge     ; cp=31,33,35
     jmp x--, sync_signal_sample ; cp=4
 sync_found_end_of_message:
-    set x, 28
+    set x, 26              [1]  ; cp=5
 sync_loop_end_of_message:
     jmp pin sync_check_idle
 public sync_signal_start:
     irq set 0
 sync_scan_edge:
-    jmp pin sync_recessive_edge ; cp=14,16,18
+    jmp pin sync_recessive_edge ; cp=30,32,34
 public sync_entry:
     irq clear 0                 ; cp=1
 sync_got_dominant:
     set x, 8               [2]  ; cp=2
 sync_signal_sample:
-    set y, 2               [2]  ; cp=5
-    irq set 4              [1]  ; cp=8
-    jmp pin sync_scan_edge [3]  ; cp=10
-    jmp sync_got_dominant  [3]  ; cp=14
+    set y, 2               [18] ; cp=5
+    irq set 4              [1]  ; cp=24
+    jmp pin sync_scan_edge [3]  ; cp=26
+    jmp sync_got_dominant  [3]  ; cp=30
 sync_check_idle:
     jmp x-- sync_loop_end_of_message
 public sync_end:
@@ -35,15 +45,15 @@ public sync_end:
 // State machine "rx" code - forward data to cpu
 public shared_rx_read:
     wait 1 irq 4
-    in pins, 1                  ; cp=10
+    in pins, 1                  ; cp=26
 public shared_rx_end:
     ;jmp shared_rx_read         ; wrap based jump
 
 // State machine "ack" code - inject properly timed ack bits if crc match
-    mov y, isr                  ; cp=11
-    jmp x!=y ack_no_match       ; cp=12
+    mov y, isr                  ; cp=27
+    jmp x!=y ack_no_match       ; cp=28
 ack_signal_inject:
-    irq set 2                   ; cp=13
+    irq set 2                   ; cp=29
 public ack_no_match:
     in osr, 11                  ; load next_counter and bits into isr
     in y, 20
@@ -58,13 +68,13 @@ public ack_end:
 
 // State machine "tx" code - write messages to bus
 tx_loop:
-    nop                    [2]  ; cp=11
+    nop                    [2]  ; cp=27
 public tx_start:
-    out x, 1                    ; cp=14
-    mov pins, x                 ; cp=15
+    out x, 1                    ; cp=30
+    mov pins, x                 ; cp=31
     wait 1 irq 4
-    jmp pin tx_loop             ; cp=10
-    jmp !x tx_start        [2]  ; cp=11
+    jmp pin tx_loop             ; cp=26
+    jmp !x tx_start        [2]  ; cp=27
 tx_error:
     irq wait 3
 
@@ -124,9 +134,9 @@ sync_got_dominant:
     jmp sync_signal_sample
 
 sync_signal_sample:
-    irq set 4              [1]  ; cp=8
-    jmp pin sync_scan_edge      ; cp=10
-    jmp sync_got_dominant  [3]  ; cp=14
+    irq set 4
+    jmp pin sync_scan_edge
+    jmp sync_got_dominant
 
 sync_scan_edge:
     set y, 2

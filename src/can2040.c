@@ -70,6 +70,8 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
  * rp2040 PIO support
  ****************************************************************/
 
+#define PIO_CLOCK_PER_BIT 32
+
 #define can2040_offset_sync_signal_start 4u
 #define can2040_offset_sync_entry 6u
 #define can2040_offset_sync_end 13u
@@ -82,13 +84,13 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
     0x0048, //  1: jmp    x--, 8
-    0xe03c, //  2: set    x, 28
+    0xe13a, //  2: set    x, 26                  [1]
     0x00cc, //  3: jmp    pin, 12
     0xc000, //  4: irq    nowait 0
     0x00c0, //  5: jmp    pin, 0
     0xc040, //  6: irq    clear 0
     0xe228, //  7: set    x, 8                   [2]
-    0xe242, //  8: set    y, 2                   [2]
+    0xf242, //  8: set    y, 2                   [18]
     0xc104, //  9: irq    nowait 4               [1]
     0x03c5, // 10: jmp    pin, 5                 [3]
     0x0307, // 11: jmp    7                      [3]
@@ -301,7 +303,7 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
 
     // Setup and sync pio state machine clocks
     pio_hw_t *pio_hw = cd->pio_hw;
-    uint32_t div = (256 / 16) * sys_clock / bitrate;
+    uint32_t div = (256 / PIO_CLOCK_PER_BIT) * sys_clock / bitrate;
     int i;
     for (i=0; i<4; i++)
         pio_hw->sm[i].clkdiv = div << PIO_SM0_CLKDIV_FRAC_LSB;
