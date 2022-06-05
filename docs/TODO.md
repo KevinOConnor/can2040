@@ -1,11 +1,6 @@
 This is an unsorted list of known limitations and areas for
 improvement.
 
-* Current transmit scheduling is sub-optimal.  By the time the ARM
-  core observes a message completion, it is likely the "inter frame
-  space" will have already completed.  That is likely to result in
-  outgoing packets not getting priority during bus contention.
-
 * Support CAN2.0B extended frames.
   * Possibly support "remote" frames?
 

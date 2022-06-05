@@ -65,7 +65,7 @@ struct can2040 {
 
     // Transmits
     uint32_t cancel_count;
-    uint32_t in_transmit;
+    uint32_t in_transmit, notify_pending;
     uint32_t tx_pull_pos, tx_push_pos;
     struct can2040_transmit tx_queue[4];
 };

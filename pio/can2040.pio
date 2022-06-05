@@ -67,16 +67,16 @@ public ack_end:
     ;jmp shared_rx_read         ; wrap based jump
 
 // State machine "tx" code - write messages to bus
-tx_loop:
+public tx_got_recessive:
     nop                    [2]  ; cp=27
 public tx_start:
     out x, 1                    ; cp=30
     mov pins, x                 ; cp=31
     wait 1 irq 4
-    jmp pin tx_loop             ; cp=26
+    jmp pin tx_got_recessive    ; cp=26
+public tx_error_loop:
     jmp !x tx_start        [2]  ; cp=27
-tx_error:
-    irq wait 3
+    ;jmp tx_error_loop          ; wrap based jump
 
 
 //
@@ -107,6 +107,7 @@ tx_error:
 // Transmit sequence for "tx" state machine
 .program sm_tx_transmit
     // CPU first disables state machine execution
+    // CPU clears irq 2 and irq 3
     // CPU then loads tx fifos with full (bitstuffed) message
     ;jmp tx_start
     wait 1 irq 0
@@ -115,9 +116,11 @@ tx_error:
 // Transmit sequence for "tx" state machine ack injection
 .program sm_tx_ack
     // CPU first disables state machine execution
+    // CPU clears irq 2 and irq 3
+    // CPU changes instruction at tx_loop from "nop" to:
+    irq wait 3
     // CPU then loads tx fifo with ack (single off bit)
     ;jmp tx_start
-    irq clear 2
     wait 1 irq 2
     // CPU then starts state machine execution
     // CPU then loads ack fifo with CRC/position sequence to check

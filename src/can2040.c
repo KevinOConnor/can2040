@@ -74,7 +74,9 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 #define can2040_offset_shared_rx_end 15u
 #define can2040_offset_ack_no_match 18u
 #define can2040_offset_ack_end 25u
+#define can2040_offset_tx_got_recessive 25u
 #define can2040_offset_tx_start 26u
+#define can2040_offset_tx_error_loop 30u
 
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
@@ -108,7 +110,6 @@ static const uint16_t can2040_program_instructions[] = {
     0x20c4, // 28: wait   1 irq, 4
     0x00d9, // 29: jmp    pin, 25
     0x023a, // 30: jmp    !x, 26                 [2]
-    0xc023, // 31: irq    wait 3
 };
 
 static void
@@ -164,9 +165,10 @@ pio_tx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     struct pio_sm_hw *sm = &pio_hw->sm[3];
-    sm->execctrl = (cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
-                    | 0x1f << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
-                    | 0x00 << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
+    sm->execctrl = (
+        cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
+        | can2040_offset_tx_error_loop << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
+        | can2040_offset_tx_error_loop << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
     sm->pinctrl = (1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
@@ -183,6 +185,7 @@ pio_tx_reset(struct can2040 *cd)
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->ctrl = ((0x07 << PIO_CTRL_SM_ENABLE_LSB)
                     | (0x08 << PIO_CTRL_SM_RESTART_LSB));
+    pio_hw->irq = (1 << 2) | (1<< 3); // clear irq 2 and 3
     if (pio_hw->flevel & PIO_FLEVEL_TX3_BITS) {
         struct pio_sm_hw *sm = &pio_hw->sm[3];
         sm->shiftctrl = 0;
@@ -196,6 +199,7 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
+    pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xa242; // nop [2]
     struct pio_sm_hw *sm = &pio_hw->sm[3];
     sm->instr = can2040_offset_tx_start; // jmp tx_start
     sm->instr = 0x20c0; // wait 1 irq, 0
@@ -215,18 +219,35 @@ pio_tx_cancel(struct can2040 *cd)
 }
 
 static void
+pio_ack_check(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
+    pio_hw->txf[2] = key;
+
+    // Raise irq after ack completes
+    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM2_BITS
+                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
+}
+
+static void
 pio_ack_inject(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
 {
-    uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
+    pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xc023; // irq wait 3
     struct pio_sm_hw *sm = &pio_hw->sm[3];
     sm->instr = can2040_offset_tx_start; // jmp tx_start
-    sm->instr = 0xc042; // irq clear 2
     sm->instr = 0x20c2; // wait 1 irq, 2
     pio_hw->txf[3] = 0x7fffffff;
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
+
+    uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
     pio_hw->txf[2] = key;
+
+    // Raise irq after ack completes
+    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM3_BITS
+                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
 }
 
 static void
@@ -553,9 +574,26 @@ enum {
 };
 
 static void
+data_state_report_frame(struct can2040 *cd)
+{
+    pio_sync_enable_idle_irq(cd);
+    if (! cd->notify_pending)
+        return;
+
+    cd->notify_pending = 0;
+    if (tx_check_self_transmit(cd))
+        tx_finalize(cd);
+    else
+        report_rx_msg(cd);
+
+    tx_do_schedule(cd);
+}
+
+static void
 data_state_go_discard(struct can2040 *cd)
 {
     cd->parse_state = MS_DISCARD;
+    cd->notify_pending = 0;
     unstuf_set_count(&cd->unstuf, 8);
     tx_cancel(cd);
     pio_sync_enable_idle_irq(cd);
@@ -582,20 +620,10 @@ data_state_go_idle(struct can2040 *cd)
         return;
     }
     pio_sync_disable_idle_irq(cd);
-    if (cd->parse_state == MS_EOF) {
-        // Check if final eof bits are all 1s
-        uint32_t ub = cd->unstuf.unstuffed_bits, cu = cd->unstuf.count_unstuff;
-        if ((ub >> cu) + 1 == (1 << (6 - cu))) {
-            // Success - send notification
-            if (tx_check_self_transmit(cd))
-                tx_finalize(cd);
-            else
-                report_rx_msg(cd);
-        }
-    }
     pio_ack_cancel(cd);
     tx_do_schedule(cd);
     cd->parse_state = MS_START;
+    cd->notify_pending = 0;
     unstuf_set_count(&cd->unstuf, 18);
 }
 
@@ -606,18 +634,21 @@ data_state_go_crc(struct can2040 *cd)
     unstuf_set_count(&cd->unstuf, 15);
     cd->parse_crc &= 0x7fff;
 
-    // Check if the message was a self transmission
-    if (tx_check_self_transmit(cd))
-        return;
-
-    // Inject ack
+    // Setup for ack injection (if receiving) or ack confirmation (if transmit)
     uint32_t cs = cd->unstuf.count_stuff;
+    uint32_t crcstart_bitpos = cd->raw_bit_count - cs - 1;
     uint32_t last = (cd->unstuf.stuffed_bits >> cs) << 15;
     last |= cd->parse_crc;
-    int count = bitstuff(&last, 15 + 1) - 1;
-    last = (last << 1) | 1;
-    uint32_t pos = cd->raw_bit_count - cs - 1;
-    pio_ack_inject(cd, last, pos + count + 1);
+    int crc_bitcount = bitstuff(&last, 15 + 1) - 1;
+
+    if (tx_check_self_transmit(cd)) {
+        last = (last << 3) | 0x05;
+        pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 3);
+    } else {
+        last = (last << 1) | 0x01;
+        pio_ack_inject(cd, last, crcstart_bitpos + crc_bitcount + 1);
+    }
+    cd->notify_pending = 1;
 }
 
 static void
@@ -667,14 +698,14 @@ data_state_update_crc(struct can2040 *cd, uint32_t data)
 
     cd->parse_state = MS_ACK;
     unstuf_clear_state(&cd->unstuf);
-    unstuf_set_count(&cd->unstuf, 2);
+    unstuf_set_count(&cd->unstuf, 3);
 }
 
 static void
 data_state_update_ack(struct can2040 *cd, uint32_t data)
 {
     pio_ack_cancel(cd);
-    if (data != 0x02) {
+    if (data != 0x05) {
         data_state_go_discard(cd);
 
         // If cpu couldn't keep up for some read data then reset the pio state
@@ -684,6 +715,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
         }
         return;
     }
+    data_state_report_frame(cd);
     cd->parse_state = MS_EOF;
     unstuf_set_count(&cd->unstuf, 6);
 }
@@ -750,16 +782,19 @@ void
 can2040_pio_irq_handler(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    uint32_t intr = pio_hw->intr;
-    while (intr & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS) {
+    uint32_t ints = pio_hw->ints0;
+    while (ints & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS) {
         uint8_t rx_byte = pio_hw->rxf[1];
         process_rx(cd, rx_byte);
-        intr = pio_hw->intr;
+        ints = pio_hw->ints0;
     }
 
-    if (intr & PIO_IRQ0_INTE_SM0_BITS && cd->parse_state != MS_START)
+    if (ints & PIO_IRQ0_INTE_SM0_BITS)
         // Bus is idle, but not all bits flushed yet - force idle state
         data_state_go_idle(cd);
+    else if (ints & (PIO_IRQ0_INTE_SM2_BITS|PIO_IRQ0_INTE_SM3_BITS))
+        // Ack phase completed successfully
+        data_state_report_frame(cd);
 }
 
 
