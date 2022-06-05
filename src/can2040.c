@@ -524,6 +524,8 @@ tx_do_schedule(struct can2040 *cd)
         uint32_t tx_pull_pos = cd->tx_pull_pos;
         cd->tx_pull_pos++;
         report_tx_fail(cd, &cd->tx_queue[tx_qpos(cd, tx_pull_pos)].msg);
+        if (cd->tx_push_pos == cd->tx_pull_pos)
+            return;
     }
     cd->in_transmit = 1;
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
@@ -533,8 +535,10 @@ tx_do_schedule(struct can2040 *cd)
 static void
 tx_cancel(struct can2040 *cd)
 {
-    cd->in_transmit = 0;
-    cd->cancel_count++;
+    if (cd->in_transmit) {
+        cd->in_transmit = 0;
+        cd->cancel_count++;
+    }
     pio_tx_cancel(cd);
 }
 
@@ -558,7 +562,6 @@ static void
 tx_finalize(struct can2040 *cd)
 {
     tx_cancel(cd);
-    cd->cancel_count = 0;
     uint32_t tx_pull_pos = cd->tx_pull_pos;
     cd->tx_pull_pos++;
     report_tx_msg(cd, &cd->tx_queue[tx_qpos(cd, tx_pull_pos)].msg);
@@ -586,6 +589,7 @@ data_state_report_frame(struct can2040 *cd)
     else
         report_rx_msg(cd);
 
+    cd->cancel_count = 0;
     tx_do_schedule(cd);
 }
 
