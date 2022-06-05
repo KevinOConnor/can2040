@@ -35,11 +35,6 @@ static inline uint32_t readl(const void *addr) {
     barrier();
     return val;
 }
-static inline uint8_t readb(const void *addr) {
-    uint8_t val = *(volatile const uint8_t *)addr;
-    barrier();
-    return val;
-}
 
 // rp2040 helper function to clear a hardware reset bit
 static void
@@ -252,21 +247,14 @@ static void
 pio_sync_enable_idle_irq(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS;
+    pio_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
 }
 
 static void
 pio_sync_disable_idle_irq(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_hw->inte0 = 0;
-}
-
-static uint32_t
-pio_sync_check_idle(struct can2040 *cd)
-{
-    pio_hw_t *pio_hw = cd->pio_hw;
-    return pio_hw->intr & PIO_IRQ0_INTE_SM0_BITS;
+    pio_hw->inte0 = PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
 }
 
 static void
@@ -759,56 +747,19 @@ process_rx(struct can2040 *cd, uint32_t rx_byte)
 }
 
 void
-can2040_dma_irq_handler(struct can2040 *cd)
-{
-    uint32_t dma_chan = cd->dma_chan;
-    io_rw_32 *inte = cd->dma_inte, *intf = &inte[1], *ints = &inte[2];
-    if (*intf & (1 << dma_chan)) {
-        // Forced irq from pio irq handler
-        hw_clear_bits(intf, 1 << cd->dma_chan);
-        if (cd->parse_state != MS_START && pio_sync_check_idle(cd))
-            data_state_go_idle(cd);
-    }
-
-    dma_channel_hw_t *ch = &dma_hw->ch[dma_chan];
-    while (*ints & (1 << dma_chan)) {
-        uint8_t rx_byte = readb(&cd->latest_rx);
-        *ints = 1 << dma_chan;
-        ch->al1_transfer_count_trig = 1;
-        process_rx(cd, rx_byte);
-    }
-}
-
-void
 can2040_pio_irq_handler(struct can2040 *cd)
 {
-    uint32_t parse_state = cd->parse_state;
-    if (parse_state != MS_START && pio_sync_check_idle(cd)) {
-        // Force dma irq to force idle state
-        io_rw_32 *inte = cd->dma_inte, *intf = &inte[1];
-        hw_set_bits(intf, 1 << cd->dma_chan);
-    }
-}
-
-static void
-dma_setup(struct can2040 *cd)
-{
-    rp2040_clear_reset(RESETS_RESET_DMA_BITS);
-
-    // Enable irqs
-    io_rw_32 *inte = cd->dma_inte;
-    hw_set_bits(inte, 1 << cd->dma_chan);
-
-    // Configure dma channel
-    dma_channel_hw_t *ch = &dma_hw->ch[cd->dma_chan];
     pio_hw_t *pio_hw = cd->pio_hw;
-    ch->read_addr = (uint32_t)&pio_hw->rxf[1];
-    ch->write_addr = (uint32_t)&cd->latest_rx;
-    ch->transfer_count = 1;
-    uint32_t dreq_pio = cd->pio_num ? DREQ_PIO1_RX1 : DREQ_PIO0_RX1;
-    ch->ctrl_trig = (dreq_pio << DMA_CH0_CTRL_TRIG_TREQ_SEL_LSB
-                     | cd->dma_chan << DMA_CH0_CTRL_TRIG_CHAIN_TO_LSB
-                     | DMA_CH0_CTRL_TRIG_EN_BITS);
+    uint32_t intr = pio_hw->intr;
+    while (intr & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS) {
+        uint8_t rx_byte = pio_hw->rxf[1];
+        process_rx(cd, rx_byte);
+        intr = pio_hw->intr;
+    }
+
+    if (intr & PIO_IRQ0_INTE_SM0_BITS && cd->parse_state != MS_START)
+        // Bus is idle, but not all bits flushed yet - force idle state
+        data_state_go_idle(cd);
 }
 
 
@@ -875,14 +826,10 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
  ****************************************************************/
 
 void
-can2040_setup(struct can2040 *cd, uint32_t pio_num, uint32_t dma_chan
-              , uint32_t dma_irq)
+can2040_setup(struct can2040 *cd, uint32_t pio_num)
 {
     memset(cd, 0, sizeof(*cd));
     cd->pio_num = !!pio_num;
-    cd->dma_chan = dma_chan >= NUM_DMA_CHANNELS ? NUM_DMA_CHANNELS-1 : dma_chan;
-    cd->dma_irq = !!dma_irq;
-    cd->dma_inte = (void*)(dma_irq ? &dma_hw->inte1 : &dma_hw->inte0);
     cd->pio_hw = cd->pio_num ? pio1_hw : pio0_hw;
 }
 
@@ -900,7 +847,6 @@ can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
     cd->gpio_tx = gpio_tx;
     pio_setup(cd, sys_clock, bitrate);
     data_state_go_discard(cd);
-    dma_setup(cd);
 }
 
 void

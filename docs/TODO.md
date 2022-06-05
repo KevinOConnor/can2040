@@ -19,8 +19,6 @@ improvement.
 * Optimizations:
   * Further optimize bitstuff/bitunstuff code
   * Optimize crc calculation
-  * Possibly reduce DMA irqs in some cases (up to 24bits per wakeup
-    instead of current wakeup every 8 bits)
 
 * Improve support for running across rp2040 ARM cores.
 
