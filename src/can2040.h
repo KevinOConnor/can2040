@@ -5,12 +5,14 @@
 
 struct can2040_msg {
     uint32_t addr;
-    uint32_t data_len;
+    uint32_t dlc;
     union {
         uint8_t d1[8];
         uint32_t d4[2];
     };
 };
+
+#define CAN2040_DATA_LEN(msg) ((msg).dlc > 8 ? 8 : (msg).dlc)
 
 enum {
     CAN2040_ID_RX = 1<<20,

@@ -550,7 +550,7 @@ tx_check_self_transmit(struct can2040 *cd)
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     struct can2040_msg *pm = &cd->parse_msg;
     if (qt->crc == cd->parse_crc
-        && qt->msg.addr == pm->addr && qt->msg.data_len == pm->data_len
+        && qt->msg.addr == pm->addr && qt->msg.dlc == pm->dlc
         && qt->msg.d4[0] == pm->d4[0] && qt->msg.d4[1] == pm->d4[1]) {
         return 1;
     }
@@ -665,12 +665,11 @@ data_state_update_start(struct can2040 *cd, uint32_t data)
     }
     cd->parse_hdr = data;
     cd->parse_crc = crcbits(0, data, 18);
-    uint32_t rdlc = data & 0xf, dlc = rdlc > 8 ? 8 : rdlc;
     cd->parse_msg.addr = (data >> 7) & 0x7ff;
-    cd->parse_msg.data_len = dlc;
+    cd->parse_msg.dlc = data & 0x0f;
     cd->parse_msg.d4[0] = cd->parse_msg.d4[1] = 0;
     cd->parse_datapos = 0;
-    if (cd->parse_datapos >= dlc) {
+    if (cd->parse_datapos >= CAN2040_DATA_LEN(cd->parse_msg)) {
         data_state_go_crc(cd);
     } else {
         cd->parse_state = MS_DATA;
@@ -684,7 +683,7 @@ data_state_update_data(struct can2040 *cd, uint32_t data)
 {
     cd->parse_crc = crcbits(cd->parse_crc, data, 8);
     cd->parse_msg.d1[cd->parse_datapos++] = data;
-    if (cd->parse_datapos >= cd->parse_msg.data_len) {
+    if (cd->parse_datapos >= CAN2040_DATA_LEN(cd->parse_msg)) {
         data_state_go_crc(cd);
     } else {
         unstuf_set_count(&cd->unstuf, 8);
@@ -828,18 +827,18 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
     // Copy msg into qt->msg
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_push_pos)];
     qt->msg.addr = msg.addr & 0x7ff;
-    uint32_t rl=msg.data_len, len = rl > 8 ? 8 : rl;
-    qt->msg.data_len = len;
+    qt->msg.dlc = msg.dlc & 0x0f;
+    uint32_t data_len = CAN2040_DATA_LEN(qt->msg);
     qt->msg.d4[0] = qt->msg.d4[1] = 0;
-    memcpy(qt->msg.d1, msg.d1, len);
+    memcpy(qt->msg.d1, msg.d1, data_len);
 
     // Calculate crc and stuff bits
     memset(qt->stuffed_data, 0, sizeof(qt->stuffed_data));
     struct bitstuffer_s bs = { 1, 0, qt->stuffed_data, 0 };
-    uint32_t hdr = (qt->msg.addr << 7) | len;
+    uint32_t hdr = (qt->msg.addr << 7) | qt->msg.dlc;
     bs_push(&bs, hdr, 19);
     int i;
-    for (i=0; i<len; i++)
+    for (i=0; i<data_len; i++)
         bs_push(&bs, qt->msg.d1[i], 8);
     qt->crc = bs.crc & 0x7fff;
     bs_push(&bs, qt->crc, 15);
