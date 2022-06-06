@@ -12,19 +12,21 @@ struct can2040_msg {
     };
 };
 
-#define CAN2040_ID_EFF 0x80000000
-#define CAN2040_ID_RTR 0x40000000
+enum {
+    CAN2040_ID_RTR = 1<<30,
+    CAN2040_ID_EFF = 1<<31,
+};
 
 #define CAN2040_DATA_LEN(msg) ((msg).dlc > 8 ? 8 : (msg).dlc)
 
 enum {
-    CAN2040_ID_RX = 1<<20,
-    CAN2040_ID_TX = 1<<21,
-    CAN2040_ID_TX_FAIL = 1<<22,
-    CAN2040_ID_ERROR = 1<<23,
+    CAN2040_NOTIFY_RX = 1<<20,
+    CAN2040_NOTIFY_TX = 1<<21,
+    CAN2040_NOTIFY_TX_FAIL = 1<<22,
+    CAN2040_NOTIFY_ERROR = 1<<23,
 };
 struct can2040;
-typedef void (*can2040_rx_cb)(struct can2040 *cd, uint32_t id
+typedef void (*can2040_rx_cb)(struct can2040 *cd, uint32_t notify
                               , struct can2040_msg *msg);
 
 void can2040_setup(struct can2040 *cd, uint32_t pio_num);

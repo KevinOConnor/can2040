@@ -482,25 +482,25 @@ static void
 report_error(struct can2040 *cd, uint32_t error_code)
 {
     struct can2040_msg msg = {};
-    cd->rx_cb(cd, CAN2040_ID_ERROR | error_code, &msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_ERROR | error_code, &msg);
 }
 
 static void
 report_rx_msg(struct can2040 *cd)
 {
-    cd->rx_cb(cd, CAN2040_ID_RX, &cd->parse_msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg);
 }
 
 static void
 report_tx_msg(struct can2040 *cd, struct can2040_msg *msg)
 {
-    cd->rx_cb(cd, CAN2040_ID_TX, msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_TX, msg);
 }
 
 static void
 report_tx_fail(struct can2040 *cd, struct can2040_msg *msg)
 {
-    cd->rx_cb(cd, CAN2040_ID_TX_FAIL, msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_TX_FAIL, msg);
 }
 
 
