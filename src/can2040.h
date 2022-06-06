@@ -4,13 +4,16 @@
 #include <stdint.h> // uint32_t
 
 struct can2040_msg {
-    uint32_t addr;
+    uint32_t id;
     uint32_t dlc;
     union {
         uint8_t d1[8];
         uint32_t d4[2];
     };
 };
+
+#define CAN2040_ID_EFF 0x80000000
+#define CAN2040_ID_RTR 0x40000000
 
 #define CAN2040_DATA_LEN(msg) ((msg).dlc > 8 ? 8 : (msg).dlc)
 
@@ -57,7 +60,7 @@ struct can2040 {
 
     // Input data state
     uint32_t parse_state;
-    uint32_t parse_hdr, parse_crc, parse_datapos;
+    uint32_t parse_crc, parse_datapos;
     struct can2040_msg parse_msg;
 
     // Bit unstuffing

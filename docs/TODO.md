@@ -1,9 +1,6 @@
 This is an unsorted list of known limitations and areas for
 improvement.
 
-* Support CAN2.0B extended frames.
-  * Possibly support "remote" frames?
-
 * Improve error handling:
   * CAN specs have guidelines for tracking "active" and "passive"
     errors, along with guidelines for disabling bus on excessive

@@ -550,7 +550,7 @@ tx_check_self_transmit(struct can2040 *cd)
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     struct can2040_msg *pm = &cd->parse_msg;
     if (qt->crc == cd->parse_crc
-        && qt->msg.addr == pm->addr && qt->msg.dlc == pm->dlc
+        && qt->msg.id == pm->id && qt->msg.dlc == pm->dlc
         && qt->msg.d4[0] == pm->d4[0] && qt->msg.d4[1] == pm->d4[1]) {
         return 1;
     }
@@ -573,7 +573,7 @@ tx_finalize(struct can2040 *cd)
  ****************************************************************/
 
 enum {
-    MS_START, MS_DATA, MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
+    MS_START, MS_EXT_HEADER, MS_DATA, MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
 };
 
 static void
@@ -656,26 +656,53 @@ data_state_go_crc(struct can2040 *cd)
 }
 
 static void
-data_state_update_start(struct can2040 *cd, uint32_t data)
+data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 {
-    if ((data & ((1<<18) | (7<<4))) != 0) {
+    if (data & (0x03 << 4)) {
         // Not a supported header
         data_state_go_discard(cd);
         return;
     }
-    cd->parse_hdr = data;
-    cd->parse_crc = crcbits(0, data, 18);
-    cd->parse_msg.addr = (data >> 7) & 0x7ff;
-    cd->parse_msg.dlc = data & 0x0f;
     cd->parse_msg.d4[0] = cd->parse_msg.d4[1] = 0;
     cd->parse_datapos = 0;
-    if (cd->parse_datapos >= CAN2040_DATA_LEN(cd->parse_msg)) {
-        data_state_go_crc(cd);
-    } else {
+    cd->parse_msg.dlc = data & 0x0f;
+    uint32_t data_len = CAN2040_DATA_LEN(cd->parse_msg);
+    if (data & (1 << 6)) {
+        data_len = 0;
+        id |= CAN2040_ID_RTR;
+    }
+    cd->parse_msg.id = id;
+    if (data_len) {
         cd->parse_state = MS_DATA;
         unstuf_set_count(&cd->unstuf, 8);
+    } else {
+        data_state_go_crc(cd);
     }
+}
+
+static void
+data_state_update_start(struct can2040 *cd, uint32_t data)
+{
     pio_sync_enable_idle_irq(cd);
+    cd->parse_crc = crcbits(0, data, 18);
+    if ((data & 0x60) == 0x60) {
+        // Extended header
+        cd->parse_msg.id = data;
+        cd->parse_state = MS_EXT_HEADER;
+        unstuf_set_count(&cd->unstuf, 20);
+        return;
+    }
+    data_state_go_data(cd, (data >> 7) & 0x7ff, data);
+}
+
+static void
+data_state_update_ext_header(struct can2040 *cd, uint32_t data)
+{
+    cd->parse_crc = crcbits(cd->parse_crc, data, 20);
+    uint32_t hdr1 = cd->parse_msg.id;
+    uint32_t id = (((hdr1 >> 7) & 0x7ff) | ((hdr1 & 0x1f) << 24)
+                   | ((data >> 7) << 11) | CAN2040_ID_EFF);
+    data_state_go_data(cd, id, data);
 }
 
 static void
@@ -741,6 +768,7 @@ data_state_update(struct can2040 *cd, uint32_t data)
 {
     switch (cd->parse_state) {
     case MS_START: data_state_update_start(cd, data); break;
+    case MS_EXT_HEADER: data_state_update_ext_header(cd, data); break;
     case MS_DATA: data_state_update_data(cd, data); break;
     case MS_CRC: data_state_update_crc(cd, data); break;
     case MS_ACK: data_state_update_ack(cd, data); break;
@@ -826,17 +854,24 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
 
     // Copy msg into qt->msg
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_push_pos)];
-    qt->msg.addr = msg.addr & 0x7ff;
+    if (msg.id & CAN2040_ID_EFF)
+        qt->msg.id = msg.id & ~0x20000000;
+    else
+        qt->msg.id = msg.id & (CAN2040_ID_RTR | 0x7ff);
     qt->msg.dlc = msg.dlc & 0x0f;
     uint32_t data_len = CAN2040_DATA_LEN(qt->msg);
+    if (qt->msg.id & CAN2040_ID_RTR)
+        data_len = 0;
     qt->msg.d4[0] = qt->msg.d4[1] = 0;
     memcpy(qt->msg.d1, msg.d1, data_len);
 
     // Calculate crc and stuff bits
     memset(qt->stuffed_data, 0, sizeof(qt->stuffed_data));
     struct bitstuffer_s bs = { 1, 0, qt->stuffed_data, 0 };
-    uint32_t hdr = (qt->msg.addr << 7) | qt->msg.dlc;
-    bs_push(&bs, hdr, 19);
+    bs_push(&bs, qt->msg.id & 0x7ff, 12);
+    if (qt->msg.id & CAN2040_ID_EFF)
+        bs_push(&bs, ((qt->msg.id >> 11) & 0x3ffff) | 0xc0000, 20);
+    bs_push(&bs, qt->msg.dlc | (qt->msg.id & CAN2040_ID_RTR ? 0x40 : 0), 7);
     int i;
     for (i=0; i<data_len; i++)
         bs_push(&bs, qt->msg.d1[i], 8);
