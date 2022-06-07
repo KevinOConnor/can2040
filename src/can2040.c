@@ -67,6 +67,7 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 
 #define PIO_CLOCK_PER_BIT 32
 
+#define can2040_offset_sync_found_end_of_message 2u
 #define can2040_offset_sync_signal_start 4u
 #define can2040_offset_sync_entry 6u
 #define can2040_offset_sync_end 13u
@@ -126,6 +127,8 @@ pio_sync_setup(struct can2040 *cd)
         | cd->gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
+    pio_hw->txf[0] = PIO_CLOCK_PER_BIT / 2 * 8 - 5 - 1;
+    sm->instr = 0x80a0; // pull block
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }
 
@@ -200,12 +203,12 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xa242; // nop [2]
-    struct pio_sm_hw *sm = &pio_hw->sm[3];
-    sm->instr = can2040_offset_tx_start; // jmp tx_start
-    sm->instr = 0x20c0; // wait 1 irq, 0
     int i;
     for (i=0; i<count; i++)
         pio_hw->txf[3] = data[i];
+    struct pio_sm_hw *sm = &pio_hw->sm[3];
+    sm->instr = can2040_offset_tx_start; // jmp tx_start
+    sm->instr = 0x20c0; // wait 1 irq, 0
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 }
 
@@ -236,10 +239,10 @@ pio_ack_inject(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xc023; // irq wait 3
+    pio_hw->txf[3] = 0x7fffffff;
     struct pio_sm_hw *sm = &pio_hw->sm[3];
     sm->instr = can2040_offset_tx_start; // jmp tx_start
     sm->instr = 0x20c2; // wait 1 irq, 2
-    pio_hw->txf[3] = 0x7fffffff;
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 
     uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
@@ -276,6 +279,22 @@ pio_sync_disable_idle_irq(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
+}
+
+static void
+pio_sync_normal_start_signal(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    uint32_t eom_idx = can2040_offset_sync_found_end_of_message;
+    pio_hw->instr_mem[eom_idx] = 0xe13a; // set x, 26 [1]
+}
+
+static void
+pio_sync_slow_start_signal(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    uint32_t eom_idx = can2040_offset_sync_found_end_of_message;
+    pio_hw->instr_mem[eom_idx] = 0xa127; // mov x, osr [1]
 }
 
 static void
@@ -590,6 +609,7 @@ data_state_report_frame(struct can2040 *cd)
         report_rx_msg(cd);
 
     cd->cancel_count = 0;
+    pio_sync_normal_start_signal(cd);
     tx_do_schedule(cd);
 }
 
@@ -600,6 +620,7 @@ data_state_go_discard(struct can2040 *cd)
     cd->notify_pending = 0;
     unstuf_set_count(&cd->unstuf, 8);
     tx_cancel(cd);
+    pio_sync_slow_start_signal(cd);
     pio_sync_enable_idle_irq(cd);
 }
 
@@ -623,6 +644,8 @@ data_state_go_idle(struct can2040 *cd)
         unstuf_set_count(&cd->unstuf, 18);
         return;
     }
+    if (cd->parse_state != MS_EOF)
+        pio_sync_slow_start_signal(cd);
     pio_sync_disable_idle_irq(cd);
     pio_ack_cancel(cd);
     tx_do_schedule(cd);

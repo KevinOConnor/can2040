@@ -5,8 +5,6 @@ improvement.
   * CAN specs have guidelines for tracking "active" and "passive"
     errors, along with guidelines for disabling bus on excessive
     errors.
-  * On a failed transmit, the code should have an additional delay
-    before retrying.
 
 * Optimizations:
   * Further optimize bitstuff/bitunstuff code

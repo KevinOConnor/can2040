@@ -20,7 +20,7 @@
 sync_recessive_edge:
     jmp y--, sync_scan_edge     ; cp=31,33,35
     jmp x--, sync_signal_sample ; cp=4
-sync_found_end_of_message:
+public sync_found_end_of_message:
     set x, 26              [1]  ; cp=5
 sync_loop_end_of_message:
     jmp pin sync_check_idle
@@ -86,7 +86,13 @@ public tx_error_loop:
 // Setup for "sync" state machine
 .program sm_sync_setup
     set pindirs, 0
+    // CPU pushes 122 into tx fifo - to set OSR for alternative slow start mode
+    pull
     ;jmp sync_got_dominant
+
+// Alternate code for sync_found_end_of_message when slow start needed
+.program sm_sync_alt_slow_start
+    mov x, osr             [1]
 
 // Setup for "rx" state machine
 .program sm_rx_setup
@@ -152,7 +158,7 @@ sync_recessive_edge:
     jmp sync_found_end_of_message
 
 sync_found_end_of_message:
-    set x, 28
+    set x, 26
 sync_loop_end_of_message:
     jmp pin sync_check_idle
     jmp sync_signal_start
