@@ -141,6 +141,7 @@ pio_rx_setup(struct can2040 *cd)
         (can2040_offset_shared_rx_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_shared_rx_read << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->pinctrl = cd->gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
+    sm->shiftctrl = 0; // flush fifo on a restart
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_RX_BITS
                      | 8 << PIO_SM0_SHIFTCTRL_PUSH_THRESH_LSB
                      | PIO_SM0_SHIFTCTRL_AUTOPUSH_BITS);
@@ -745,6 +746,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
 
         // If cpu couldn't keep up for some read data then reset the pio state
         if (pio_rx_check_stall(cd)) {
+            cd->raw_bit_count = cd->unstuf.count_stuff = 0;
             pio_sm_setup(cd);
             report_error(cd, 0);
         }
