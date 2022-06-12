@@ -554,7 +554,8 @@ tx_check_self_transmit(struct can2040 *cd)
     struct can2040_msg *pm = &cd->parse_msg;
     if (qt->crc == cd->parse_crc
         && qt->msg.id == pm->id && qt->msg.dlc == pm->dlc
-        && qt->msg.d4[0] == pm->d4[0] && qt->msg.d4[1] == pm->d4[1]) {
+        && qt->msg.data32[0] == pm->data32[0]
+        && qt->msg.data32[1] == pm->data32[1]) {
         return 1;
     }
     tx_cancel(cd);
@@ -669,10 +670,10 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
         data_state_go_discard(cd);
         return;
     }
-    cd->parse_msg.d4[0] = cd->parse_msg.d4[1] = 0;
+    cd->parse_msg.data32[0] = cd->parse_msg.data32[1] = 0;
     cd->parse_datapos = 0;
     cd->parse_msg.dlc = data & 0x0f;
-    uint32_t data_len = CAN2040_DATA_LEN(cd->parse_msg);
+    uint32_t data_len = CAN2040_DATA_LEN(&cd->parse_msg);
     if (data & (1 << 6)) {
         data_len = 0;
         id |= CAN2040_ID_RTR;
@@ -715,8 +716,8 @@ static void
 data_state_update_data(struct can2040 *cd, uint32_t data)
 {
     cd->parse_crc = crcbits(cd->parse_crc, data, 8);
-    cd->parse_msg.d1[cd->parse_datapos++] = data;
-    if (cd->parse_datapos >= CAN2040_DATA_LEN(cd->parse_msg)) {
+    cd->parse_msg.data[cd->parse_datapos++] = data;
+    if (cd->parse_datapos >= CAN2040_DATA_LEN(&cd->parse_msg)) {
         data_state_go_crc(cd);
     } else {
         unstuf_set_count(&cd->unstuf, 8);
@@ -850,7 +851,7 @@ can2040_check_transmit(struct can2040 *cd)
 }
 
 int
-can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
+can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
 {
     uint32_t tx_pull_pos = readl(&cd->tx_pull_pos);
     uint32_t tx_push_pos = cd->tx_push_pos;
@@ -861,16 +862,17 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
 
     // Copy msg into qt->msg
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_push_pos)];
-    if (msg.id & CAN2040_ID_EFF)
-        qt->msg.id = msg.id & ~0x20000000;
+    uint32_t id = msg->id;
+    if (id & CAN2040_ID_EFF)
+        qt->msg.id = id & ~0x20000000;
     else
-        qt->msg.id = msg.id & (CAN2040_ID_RTR | 0x7ff);
-    qt->msg.dlc = msg.dlc & 0x0f;
-    uint32_t data_len = CAN2040_DATA_LEN(qt->msg);
+        qt->msg.id = id & (CAN2040_ID_RTR | 0x7ff);
+    qt->msg.dlc = msg->dlc & 0x0f;
+    uint32_t data_len = CAN2040_DATA_LEN(&qt->msg);
     if (qt->msg.id & CAN2040_ID_RTR)
         data_len = 0;
-    qt->msg.d4[0] = qt->msg.d4[1] = 0;
-    memcpy(qt->msg.d1, msg.d1, data_len);
+    qt->msg.data32[0] = qt->msg.data32[1] = 0;
+    memcpy(qt->msg.data, msg->data, data_len);
 
     // Calculate crc and stuff bits
     memset(qt->stuffed_data, 0, sizeof(qt->stuffed_data));
@@ -881,7 +883,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg msg)
     bs_push(&bs, qt->msg.dlc | (qt->msg.id & CAN2040_ID_RTR ? 0x40 : 0), 7);
     int i;
     for (i=0; i<data_len; i++)
-        bs_push(&bs, qt->msg.d1[i], 8);
+        bs_push(&bs, qt->msg.data[i], 8);
     qt->crc = bs.crc & 0x7fff;
     bs_push(&bs, qt->crc, 15);
     bs_pushraw(&bs, 1, 1);

@@ -7,8 +7,8 @@ struct can2040_msg {
     uint32_t id;
     uint32_t dlc;
     union {
-        uint8_t d1[8];
-        uint32_t d4[2];
+        uint8_t data[8];
+        uint32_t data32[2];
     };
 };
 
@@ -17,7 +17,7 @@ enum {
     CAN2040_ID_EFF = 1<<31,
 };
 
-#define CAN2040_DATA_LEN(msg) ((msg).dlc > 8 ? 8 : (msg).dlc)
+#define CAN2040_DATA_LEN(msg) ((msg)->dlc > 8 ? 8 : (msg)->dlc)
 
 enum {
     CAN2040_NOTIFY_RX = 1<<20,
@@ -36,7 +36,7 @@ void can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
 void can2040_shutdown(struct can2040 *cd);
 void can2040_pio_irq_handler(struct can2040 *cd);
 int can2040_check_transmit(struct can2040 *cd);
-int can2040_transmit(struct can2040 *cd, struct can2040_msg msg);
+int can2040_transmit(struct can2040 *cd, struct can2040_msg *msg);
 
 
 /****************************************************************
