@@ -613,7 +613,8 @@ tx_finalize(struct can2040 *cd)
 
 // Parsing states (stored in cd->parse_state)
 enum {
-    MS_HEADER, MS_EXT_HEADER, MS_DATA, MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
+    MS_HEADER, MS_EXT_HEADER, MS_DATA0, MS_DATA1, MS_CRC, MS_ACK, MS_EOF,
+    MS_DISCARD
 };
 
 // Ack phase succeeded - report message (rx or tx) to calling code
@@ -640,7 +641,7 @@ data_state_go_discard(struct can2040 *cd)
 {
     cd->parse_state = MS_DISCARD;
     cd->notify_pending = 0;
-    unstuf_set_count(&cd->unstuf, 8);
+    unstuf_set_count(&cd->unstuf, 32);
     tx_cancel(cd);
     pio_sync_slow_start_signal(cd);
     pio_sync_enable_may_start_tx_irq(cd);
@@ -710,7 +711,7 @@ data_state_go_crc(struct can2040 *cd)
     cd->notify_pending = 1;
 }
 
-// Transition to MS_DATA state (if applicable) - await data bits
+// Transition to MS_DATA0 state (if applicable) - await data bits
 static void
 data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 {
@@ -720,17 +721,16 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
         return;
     }
     cd->parse_msg.data32[0] = cd->parse_msg.data32[1] = 0;
-    cd->parse_datapos = 0;
-    cd->parse_msg.dlc = data & 0x0f;
-    uint32_t data_len = CAN2040_DATA_LEN(&cd->parse_msg);
+    uint32_t dlc = data & 0x0f;
+    cd->parse_msg.dlc = dlc;
     if (data & (1 << 6)) {
-        data_len = 0;
+        dlc = 0;
         id |= CAN2040_ID_RTR;
     }
     cd->parse_msg.id = id;
-    if (data_len) {
-        cd->parse_state = MS_DATA;
-        unstuf_set_count(&cd->unstuf, 8);
+    if (dlc) {
+        cd->parse_state = MS_DATA0;
+        unstuf_set_count(&cd->unstuf, dlc >= 4 ? 32 : dlc * 8);
     } else {
         data_state_go_crc(cd);
     }
@@ -763,17 +763,29 @@ data_state_update_ext_header(struct can2040 *cd, uint32_t data)
     data_state_go_data(cd, id, data);
 }
 
-// Handle reception of one byte of data content
+// Handle reception of first 1-4 bytes of data content
 static void
-data_state_update_data(struct can2040 *cd, uint32_t data)
+data_state_update_data0(struct can2040 *cd, uint32_t data)
 {
-    cd->parse_crc = crcbits(cd->parse_crc, data, 8);
-    cd->parse_msg.data[cd->parse_datapos++] = data;
-    if (cd->parse_datapos >= CAN2040_DATA_LEN(&cd->parse_msg)) {
-        data_state_go_crc(cd);
+    uint32_t dlc = cd->parse_msg.dlc, bits = dlc >= 4 ? 32 : dlc * 8;
+    cd->parse_crc = crcbits(cd->parse_crc, data, bits);
+    cd->parse_msg.data32[0] = __builtin_bswap32(data << (32 - bits));
+    if (dlc > 4) {
+        cd->parse_state = MS_DATA1;
+        unstuf_set_count(&cd->unstuf, dlc >= 8 ? 32 : (dlc - 4) * 8);
     } else {
-        unstuf_set_count(&cd->unstuf, 8);
+        data_state_go_crc(cd);
     }
+}
+
+// Handle reception of bytes 5-8 of data content
+static void
+data_state_update_data1(struct can2040 *cd, uint32_t data)
+{
+    uint32_t dlc = cd->parse_msg.dlc, bits = dlc >= 8 ? 32 : (dlc - 4) * 8;
+    cd->parse_crc = crcbits(cd->parse_crc, data, bits);
+    cd->parse_msg.data32[1] = __builtin_bswap32(data << (32 - bits));
+    data_state_go_crc(cd);
 }
 
 // Handle reception of 15 bits of message CRC
@@ -834,7 +846,8 @@ data_state_update(struct can2040 *cd, uint32_t data)
     switch (cd->parse_state) {
     case MS_HEADER: data_state_update_header(cd, data); break;
     case MS_EXT_HEADER: data_state_update_ext_header(cd, data); break;
-    case MS_DATA: data_state_update_data(cd, data); break;
+    case MS_DATA0: data_state_update_data0(cd, data); break;
+    case MS_DATA1: data_state_update_data1(cd, data); break;
     case MS_CRC: data_state_update_crc(cd, data); break;
     case MS_ACK: data_state_update_ack(cd, data); break;
     case MS_EOF: data_state_update_eof(cd, data); break;

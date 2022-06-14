@@ -61,7 +61,7 @@ struct can2040 {
 
     // Input data state
     uint32_t parse_state;
-    uint32_t parse_crc, parse_datapos;
+    uint32_t parse_crc;
     struct can2040_msg parse_msg;
 
     // Bit unstuffing
