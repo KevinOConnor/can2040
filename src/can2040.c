@@ -635,13 +635,20 @@ data_state_report_frame(struct can2040 *cd)
     tx_do_schedule(cd);
 }
 
+// Transition to the next parsing state
+static void
+data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t bits)
+{
+    cd->parse_state = state;
+    unstuf_set_count(&cd->unstuf, bits);
+}
+
 // Transition to the MS_DISCARD state - drop all bits until 6 passive bits
 static void
 data_state_go_discard(struct can2040 *cd)
 {
-    cd->parse_state = MS_DISCARD;
+    data_state_go_next(cd, MS_DISCARD, 32);
     cd->notify_pending = 0;
-    unstuf_set_count(&cd->unstuf, 32);
     tx_cancel(cd);
     pio_sync_slow_start_signal(cd);
     pio_sync_enable_may_start_tx_irq(cd);
@@ -666,7 +673,7 @@ data_state_line_passive(struct can2040 *cd)
             data_state_go_discard(cd);
             return;
         }
-        unstuf_set_count(&cd->unstuf, 18);
+        data_state_go_next(cd, MS_HEADER, 18);
         return;
     }
     if (cd->parse_state != MS_EOF)
@@ -674,9 +681,8 @@ data_state_line_passive(struct can2040 *cd)
     pio_sync_disable_may_start_tx_irq(cd);
     pio_ack_cancel(cd);
     tx_do_schedule(cd);
-    cd->parse_state = MS_HEADER;
+    data_state_go_next(cd, MS_HEADER, 18);
     cd->notify_pending = 0;
-    unstuf_set_count(&cd->unstuf, 18);
 }
 
 // Received 10+ passive bits on the line (between 10 and 17 bits)
@@ -690,8 +696,7 @@ data_state_line_may_start_transmit(struct can2040 *cd)
 static void
 data_state_go_crc(struct can2040 *cd)
 {
-    cd->parse_state = MS_CRC;
-    unstuf_set_count(&cd->unstuf, 15);
+    data_state_go_next(cd, MS_CRC, 15);
     cd->parse_crc &= 0x7fff;
 
     // Setup for ack injection (if receiving) or ack confirmation (if transmit)
@@ -728,12 +733,10 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
         id |= CAN2040_ID_RTR;
     }
     cd->parse_msg.id = id;
-    if (dlc) {
-        cd->parse_state = MS_DATA0;
-        unstuf_set_count(&cd->unstuf, dlc >= 4 ? 32 : dlc * 8);
-    } else {
+    if (dlc)
+        data_state_go_next(cd, MS_DATA0, dlc >= 4 ? 32 : dlc * 8);
+    else
         data_state_go_crc(cd);
-    }
 }
 
 // Handle reception of initial 19 header bits (start-of-frame (SOF) + 18 bits)
@@ -745,8 +748,7 @@ data_state_update_header(struct can2040 *cd, uint32_t data)
     if ((data & 0x60) == 0x60) {
         // Extended header
         cd->parse_msg.id = data;
-        cd->parse_state = MS_EXT_HEADER;
-        unstuf_set_count(&cd->unstuf, 20);
+        data_state_go_next(cd, MS_EXT_HEADER, 20);
         return;
     }
     data_state_go_data(cd, (data >> 7) & 0x7ff, data);
@@ -770,12 +772,10 @@ data_state_update_data0(struct can2040 *cd, uint32_t data)
     uint32_t dlc = cd->parse_msg.dlc, bits = dlc >= 4 ? 32 : dlc * 8;
     cd->parse_crc = crcbits(cd->parse_crc, data, bits);
     cd->parse_msg.data32[0] = __builtin_bswap32(data << (32 - bits));
-    if (dlc > 4) {
-        cd->parse_state = MS_DATA1;
-        unstuf_set_count(&cd->unstuf, dlc >= 8 ? 32 : (dlc - 4) * 8);
-    } else {
+    if (dlc > 4)
+        data_state_go_next(cd, MS_DATA1, dlc >= 8 ? 32 : (dlc - 4) * 8);
+    else
         data_state_go_crc(cd);
-    }
 }
 
 // Handle reception of bytes 5-8 of data content
@@ -798,9 +798,8 @@ data_state_update_crc(struct can2040 *cd, uint32_t data)
         return;
     }
 
-    cd->parse_state = MS_ACK;
     unstuf_clear_state(&cd->unstuf);
-    unstuf_set_count(&cd->unstuf, 3);
+    data_state_go_next(cd, MS_ACK, 3);
 }
 
 // Handle reception of 3 bits of ack phase (crc delimiter, ack, ack delimiter)
@@ -820,8 +819,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
         return;
     }
     data_state_report_frame(cd);
-    cd->parse_state = MS_EOF;
-    unstuf_set_count(&cd->unstuf, 6);
+    data_state_go_next(cd, MS_EOF, 6);
 }
 
 // Handle reception of end-of-frame (EOF) bits (only called on an error)
