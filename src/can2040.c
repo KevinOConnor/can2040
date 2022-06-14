@@ -113,6 +113,7 @@ static const uint16_t can2040_program_instructions[] = {
     0x023a, // 30: jmp    !x, 26                 [2]
 };
 
+// Setup PIO "sync" state machine (state machine 0)
 static void
 pio_sync_setup(struct can2040 *cd)
 {
@@ -132,6 +133,7 @@ pio_sync_setup(struct can2040 *cd)
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }
 
+// Setup PIO "rx" state machine (state machine 1)
 static void
 pio_rx_setup(struct can2040 *cd)
 {
@@ -148,6 +150,7 @@ pio_rx_setup(struct can2040 *cd)
     sm->instr = can2040_offset_shared_rx_read; // jmp shared_rx_read
 }
 
+// Setup PIO "ack" state machine (state machine 2)
 static void
 pio_ack_setup(struct can2040 *cd)
 {
@@ -164,6 +167,7 @@ pio_ack_setup(struct can2040 *cd)
     sm->instr = can2040_offset_ack_no_match; // jmp ack_no_match
 }
 
+// Setup PIO "tx" state machine (state machine 3)
 static void
 pio_tx_setup(struct can2040 *cd)
 {
@@ -183,6 +187,7 @@ pio_tx_setup(struct can2040 *cd)
     sm->instr = 0xe081; // set pindirs, 1
 }
 
+// Flush and halt PIO "tx" state machine
 static void
 pio_tx_reset(struct can2040 *cd)
 {
@@ -198,6 +203,7 @@ pio_tx_reset(struct can2040 *cd)
     }
 }
 
+// Queue a message for transmission on PIO "tx" state machine
 static void
 pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
 {
@@ -213,6 +219,7 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 }
 
+// Halt PIO "tx" state machine
 static void
 pio_tx_cancel(struct can2040 *cd)
 {
@@ -222,6 +229,7 @@ pio_tx_cancel(struct can2040 *cd)
     sm->instr = 0xe001; // set pins, 1
 }
 
+// Set PIO "ack" state machine to check a given CRC sequence
 static void
 pio_ack_check(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
 {
@@ -234,6 +242,7 @@ pio_ack_check(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
                      | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
 }
 
+// Set PIO "ack" state machine to check a CRC and inject an ack on success
 static void
 pio_ack_inject(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
 {
@@ -254,6 +263,7 @@ pio_ack_inject(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
                      | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
 }
 
+// Cancel any pending checks on PIO "ack" state machine
 static void
 pio_ack_cancel(struct can2040 *cd)
 {
@@ -261,6 +271,7 @@ pio_ack_cancel(struct can2040 *cd)
     pio_hw->txf[2] = 0;
 }
 
+// Test if PIO "rx" state machine has overflowed its fifos
 static int
 pio_rx_check_stall(struct can2040 *cd)
 {
@@ -268,20 +279,23 @@ pio_rx_check_stall(struct can2040 *cd)
     return pio_hw->fdebug & (1 << (PIO_FDEBUG_RXSTALL_LSB + 1));
 }
 
+// Enable host irq on a "may start transmit" signal (sm irq 0)
 static void
-pio_sync_enable_idle_irq(struct can2040 *cd)
+pio_sync_enable_may_start_tx_irq(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
 }
 
+// Disable PIO host irqs (except for normal data read irq)
 static void
-pio_sync_disable_idle_irq(struct can2040 *cd)
+pio_sync_disable_may_start_tx_irq(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
 }
 
+// Set PIO "sync" machine to signal "start transmit" (sm irq 0) on 11 idle bits
 static void
 pio_sync_normal_start_signal(struct can2040 *cd)
 {
@@ -290,6 +304,7 @@ pio_sync_normal_start_signal(struct can2040 *cd)
     pio_hw->instr_mem[eom_idx] = 0xe13a; // set x, 26 [1]
 }
 
+// Set PIO "sync" machine to signal "start transmit" (sm irq 0) on 17 idle bits
 static void
 pio_sync_slow_start_signal(struct can2040 *cd)
 {
@@ -298,6 +313,7 @@ pio_sync_slow_start_signal(struct can2040 *cd)
     pio_hw->instr_mem[eom_idx] = 0xa127; // mov x, osr [1]
 }
 
+// Setup PIO state machines
 static void
 pio_sm_setup(struct can2040 *cd)
 {
@@ -323,6 +339,7 @@ pio_sm_setup(struct can2040 *cd)
 
 #define PIO_FUNC 6
 
+// Initial setup of gpio pins and PIO state machines
 static void
 pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
 {
@@ -350,6 +367,7 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
  * CRC calculation
  ****************************************************************/
 
+// Update a crc with 'count' number of bits from 'data'
 static uint32_t
 crcbits(uint32_t crc, uint32_t data, uint32_t count)
 {
@@ -366,6 +384,7 @@ crcbits(uint32_t crc, uint32_t data, uint32_t count)
  * Bit unstuffing
  ****************************************************************/
 
+// Add 'count' number of bits from 'data' to the 'bu' unstuffer
 static void
 unstuf_add_bits(struct can2040_bitunstuffer *bu, uint32_t data, uint32_t count)
 {
@@ -374,6 +393,7 @@ unstuf_add_bits(struct can2040_bitunstuffer *bu, uint32_t data, uint32_t count)
     bu->count_stuff = count;
 }
 
+// Reset state and set the next desired 'count' unstuffed bits to extract
 static void
 unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t count)
 {
@@ -381,6 +401,7 @@ unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t count)
     bu->count_unstuff = count;
 }
 
+// Clear bitstuffing state (used after crc field to avoid bitstuffing ack field)
 static void
 unstuf_clear_state(struct can2040_bitunstuffer *bu)
 {
@@ -390,6 +411,7 @@ unstuf_clear_state(struct can2040_bitunstuffer *bu)
         bu->stuffed_bits ^= 1 << cs;
 }
 
+// Pull bits from unstuffer (as specified in unstuf_set_count() )
 static int
 unstuf_pull_bits(struct can2040_bitunstuffer *bu)
 {
@@ -433,6 +455,7 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
  * Bit stuffing
  ****************************************************************/
 
+// Stuff 'num_bits' bits in '*pb' - upper bits must already be stuffed
 static uint32_t
 bitstuff(uint32_t *pb, uint32_t num_bits)
 {
@@ -452,10 +475,12 @@ bitstuff(uint32_t *pb, uint32_t num_bits)
     return count;
 }
 
+// State storage for building bit stuffed (and crc'ed) transmit messages
 struct bitstuffer_s {
     uint32_t prev_stuffed, bitpos, *buf, crc;
 };
 
+// Push 'count' bits of 'data' into stuffer without performing bit stuffing
 static void
 bs_pushraw(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 {
@@ -471,6 +496,7 @@ bs_pushraw(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
     bs->bitpos = bitpos + count;
 }
 
+// Push 'count' bits of 'data' into stuffer
 static void
 bs_push(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 {
@@ -482,6 +508,7 @@ bs_push(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
     bs->prev_stuffed = stuf;
 }
 
+// Pad final word of stuffer with high bits
 static uint32_t
 bs_finalize(struct bitstuffer_s *bs)
 {
@@ -498,6 +525,7 @@ bs_finalize(struct bitstuffer_s *bs)
  * Notification callbacks
  ****************************************************************/
 
+// Report error to calling code (via callback interface)
 static void
 report_error(struct can2040 *cd, uint32_t error_code)
 {
@@ -505,12 +533,14 @@ report_error(struct can2040 *cd, uint32_t error_code)
     cd->rx_cb(cd, CAN2040_NOTIFY_ERROR | error_code, &msg);
 }
 
+// Report a received message to calling code (via callback interface)
 static void
 report_rx_msg(struct can2040 *cd)
 {
     cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg);
 }
 
+// Report a message that was successfully transmited (via callback interface)
 static void
 report_tx_msg(struct can2040 *cd, struct can2040_msg *msg)
 {
@@ -522,12 +552,14 @@ report_tx_msg(struct can2040 *cd, struct can2040_msg *msg)
  * Transmit
  ****************************************************************/
 
+// Calculate queue array position from a transmit index
 static uint32_t
 tx_qpos(struct can2040 *cd, uint32_t pos)
 {
     return pos % ARRAY_SIZE(cd->tx_queue);
 }
 
+// Queue the next message for transmission in the PIO
 static void
 tx_do_schedule(struct can2040 *cd)
 {
@@ -538,6 +570,7 @@ tx_do_schedule(struct can2040 *cd)
     pio_tx_send(cd, qt->stuffed_data, qt->stuffed_words);
 }
 
+// Cancel any pending transmissions
 static void
 tx_cancel(struct can2040 *cd)
 {
@@ -545,6 +578,7 @@ tx_cancel(struct can2040 *cd)
     pio_tx_cancel(cd);
 }
 
+// Check if the last received message was a transmission from this node
 static int
 tx_check_self_transmit(struct can2040 *cd)
 {
@@ -562,6 +596,7 @@ tx_check_self_transmit(struct can2040 *cd)
     return 0;
 }
 
+// Note a successful message transmission
 static void
 tx_finalize(struct can2040 *cd)
 {
@@ -576,14 +611,16 @@ tx_finalize(struct can2040 *cd)
  * Input state tracking
  ****************************************************************/
 
+// Parsing states (stored in cd->parse_state)
 enum {
-    MS_START, MS_EXT_HEADER, MS_DATA, MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
+    MS_HEADER, MS_EXT_HEADER, MS_DATA, MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
 };
 
+// Ack phase succeeded - report message (rx or tx) to calling code
 static void
 data_state_report_frame(struct can2040 *cd)
 {
-    pio_sync_enable_idle_irq(cd);
+    pio_sync_enable_may_start_tx_irq(cd);
     if (! cd->notify_pending)
         return;
 
@@ -597,6 +634,7 @@ data_state_report_frame(struct can2040 *cd)
     tx_do_schedule(cd);
 }
 
+// Transition to the MS_DISCARD state - drop all bits until 6 passive bits
 static void
 data_state_go_discard(struct can2040 *cd)
 {
@@ -605,19 +643,21 @@ data_state_go_discard(struct can2040 *cd)
     unstuf_set_count(&cd->unstuf, 8);
     tx_cancel(cd);
     pio_sync_slow_start_signal(cd);
-    pio_sync_enable_idle_irq(cd);
+    pio_sync_enable_may_start_tx_irq(cd);
 }
 
+// Received six dominant bits on the line
 static void
-data_state_go_error(struct can2040 *cd)
+data_state_line_error(struct can2040 *cd)
 {
     data_state_go_discard(cd);
 }
 
+// Received six passive bits on the line
 static void
-data_state_go_idle(struct can2040 *cd)
+data_state_line_passive(struct can2040 *cd)
 {
-    if (cd->parse_state == MS_START) {
+    if (cd->parse_state == MS_HEADER) {
         if (!cd->unstuf.count_stuff && cd->unstuf.stuffed_bits == 0xffffffff) {
             // Counter overflow in "sync" state machine - reset it
             pio_sync_setup(cd);
@@ -630,14 +670,22 @@ data_state_go_idle(struct can2040 *cd)
     }
     if (cd->parse_state != MS_EOF)
         pio_sync_slow_start_signal(cd);
-    pio_sync_disable_idle_irq(cd);
+    pio_sync_disable_may_start_tx_irq(cd);
     pio_ack_cancel(cd);
     tx_do_schedule(cd);
-    cd->parse_state = MS_START;
+    cd->parse_state = MS_HEADER;
     cd->notify_pending = 0;
     unstuf_set_count(&cd->unstuf, 18);
 }
 
+// Received 10+ passive bits on the line (between 10 and 17 bits)
+static void
+data_state_line_may_start_transmit(struct can2040 *cd)
+{
+    data_state_line_passive(cd);
+}
+
+// Transition to MS_CRC state - await 15 bits of crc
 static void
 data_state_go_crc(struct can2040 *cd)
 {
@@ -662,6 +710,7 @@ data_state_go_crc(struct can2040 *cd)
     cd->notify_pending = 1;
 }
 
+// Transition to MS_DATA state (if applicable) - await data bits
 static void
 data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 {
@@ -687,10 +736,11 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
     }
 }
 
+// Handle reception of initial 19 header bits (start-of-frame (SOF) + 18 bits)
 static void
-data_state_update_start(struct can2040 *cd, uint32_t data)
+data_state_update_header(struct can2040 *cd, uint32_t data)
 {
-    pio_sync_enable_idle_irq(cd);
+    pio_sync_enable_may_start_tx_irq(cd);
     cd->parse_crc = crcbits(0, data, 18);
     if ((data & 0x60) == 0x60) {
         // Extended header
@@ -702,6 +752,7 @@ data_state_update_start(struct can2040 *cd, uint32_t data)
     data_state_go_data(cd, (data >> 7) & 0x7ff, data);
 }
 
+// Handle reception of additional 20 bits of "extended header"
 static void
 data_state_update_ext_header(struct can2040 *cd, uint32_t data)
 {
@@ -712,6 +763,7 @@ data_state_update_ext_header(struct can2040 *cd, uint32_t data)
     data_state_go_data(cd, id, data);
 }
 
+// Handle reception of one byte of data content
 static void
 data_state_update_data(struct can2040 *cd, uint32_t data)
 {
@@ -724,6 +776,7 @@ data_state_update_data(struct can2040 *cd, uint32_t data)
     }
 }
 
+// Handle reception of 15 bits of message CRC
 static void
 data_state_update_crc(struct can2040 *cd, uint32_t data)
 {
@@ -738,6 +791,7 @@ data_state_update_crc(struct can2040 *cd, uint32_t data)
     unstuf_set_count(&cd->unstuf, 3);
 }
 
+// Handle reception of 3 bits of ack phase (crc delimiter, ack, ack delimiter)
 static void
 data_state_update_ack(struct can2040 *cd, uint32_t data)
 {
@@ -758,6 +812,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
     unstuf_set_count(&cd->unstuf, 6);
 }
 
+// Handle reception of end-of-frame (EOF) bits (only called on an error)
 static void
 data_state_update_eof(struct can2040 *cd, uint32_t data)
 {
@@ -765,17 +820,19 @@ data_state_update_eof(struct can2040 *cd, uint32_t data)
     data_state_go_discard(cd);
 }
 
+// Handle data received while in MS_DISCARD state
 static void
 data_state_update_discard(struct can2040 *cd, uint32_t data)
 {
     data_state_go_discard(cd);
 }
 
+// Update parsing state after reading the bits of the current field
 static void
 data_state_update(struct can2040 *cd, uint32_t data)
 {
     switch (cd->parse_state) {
-    case MS_START: data_state_update_start(cd, data); break;
+    case MS_HEADER: data_state_update_header(cd, data); break;
     case MS_EXT_HEADER: data_state_update_ext_header(cd, data); break;
     case MS_DATA: data_state_update_data(cd, data); break;
     case MS_CRC: data_state_update_crc(cd, data); break;
@@ -790,6 +847,7 @@ data_state_update(struct can2040 *cd, uint32_t data)
  * Input processing
  ****************************************************************/
 
+// Process an incoming byte of data from PIO "rx" state machine
 static void
 process_rx(struct can2040 *cd, uint32_t rx_byte)
 {
@@ -808,15 +866,16 @@ process_rx(struct can2040 *cd, uint32_t rx_byte)
         } else {
             if (ret == -1) {
                 // 6 consecutive high bits
-                data_state_go_idle(cd);
+                data_state_line_passive(cd);
             } else {
                 // 6 consecutive low bits
-                data_state_go_error(cd);
+                data_state_line_error(cd);
             }
         }
     }
 }
 
+// Main API irq notification function
 void
 can2040_pio_irq_handler(struct can2040 *cd)
 {
@@ -829,8 +888,8 @@ can2040_pio_irq_handler(struct can2040 *cd)
     }
 
     if (ints & PIO_IRQ0_INTE_SM0_BITS)
-        // Bus is idle, but not all bits flushed yet - force idle state
-        data_state_go_idle(cd);
+        // Bus is idle, but not all bits may have been flushed yet
+        data_state_line_may_start_transmit(cd);
     else if (ints & (PIO_IRQ0_INTE_SM2_BITS|PIO_IRQ0_INTE_SM3_BITS))
         // Ack phase completed successfully
         data_state_report_frame(cd);
@@ -841,6 +900,7 @@ can2040_pio_irq_handler(struct can2040 *cd)
  * Transmit queuing
  ****************************************************************/
 
+// API function to check if transmit space available
 int
 can2040_check_transmit(struct can2040 *cd)
 {
@@ -850,6 +910,7 @@ can2040_check_transmit(struct can2040 *cd)
     return pending < ARRAY_SIZE(cd->tx_queue);
 }
 
+// API function to transmit a message
 int
 can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
 {
@@ -860,7 +921,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
         // Tx queue full
         return -1;
 
-    // Copy msg into qt->msg
+    // Copy msg into transmit queue
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_push_pos)];
     uint32_t id = msg->id;
     if (id & CAN2040_ID_EFF)
@@ -894,7 +955,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
 
     // Kick transmitter
     __disable_irq();
-    if (cd->parse_state == MS_START)
+    if (cd->parse_state == MS_HEADER)
         // XXX - not a good way to start tx
         tx_do_schedule(cd);
     __enable_irq();
@@ -907,6 +968,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
  * Setup
  ****************************************************************/
 
+// API function to initialize can2040 code
 void
 can2040_setup(struct can2040 *cd, uint32_t pio_num)
 {
@@ -915,12 +977,14 @@ can2040_setup(struct can2040 *cd, uint32_t pio_num)
     cd->pio_hw = cd->pio_num ? pio1_hw : pio0_hw;
 }
 
+// API function to configure callback
 void
 can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
 {
     cd->rx_cb = rx_cb;
 }
 
+// API function to start CANbus interface
 void
 can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
               , uint32_t gpio_rx, uint32_t gpio_tx)
@@ -931,6 +995,7 @@ can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
     data_state_go_discard(cd);
 }
 
+// API function to stop and uninitialize can2040 code
 void
 can2040_shutdown(struct can2040 *cd)
 {
