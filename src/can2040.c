@@ -683,6 +683,16 @@ data_state_line_passive(struct can2040 *cd)
         data_state_go_next(cd, MS_START, 1);
         return;
     }
+
+    if (pio_rx_check_stall(cd)) {
+        // CPU couldn't keep up for some read data - must reset pio state
+        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
+        pio_sm_setup(cd);
+        report_error(cd, 0);
+        data_state_go_discard(cd);
+        return;
+    }
+
     if (cd->parse_state != MS_EOF)
         pio_sync_slow_start_signal(cd);
     pio_sync_disable_may_start_tx_irq(cd);
@@ -833,13 +843,6 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
     pio_ack_cancel(cd);
     if (data != 0x05) {
         data_state_go_discard(cd);
-
-        // If cpu couldn't keep up for some read data then reset the pio state
-        if (pio_rx_check_stall(cd)) {
-            cd->raw_bit_count = cd->unstuf.count_stuff = 0;
-            pio_sm_setup(cd);
-            report_error(cd, 0);
-        }
         return;
     }
     data_state_report_frame(cd);
