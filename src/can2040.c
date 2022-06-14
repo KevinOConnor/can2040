@@ -411,6 +411,13 @@ unstuf_clear_state(struct can2040_bitunstuffer *bu)
         bu->stuffed_bits ^= 1 << cs;
 }
 
+// Force passive state
+static void
+unstuf_force_idle(struct can2040_bitunstuffer *bu)
+{
+    bu->stuffed_bits = 0x1ff;
+}
+
 // Pull bits from unstuffer (as specified in unstuf_set_count() )
 static int
 unstuf_pull_bits(struct can2040_bitunstuffer *bu)
@@ -613,8 +620,8 @@ tx_finalize(struct can2040 *cd)
 
 // Parsing states (stored in cd->parse_state)
 enum {
-    MS_HEADER, MS_EXT_HEADER, MS_DATA0, MS_DATA1, MS_CRC, MS_ACK, MS_EOF,
-    MS_DISCARD
+    MS_START, MS_HEADER, MS_EXT_HEADER, MS_DATA0, MS_DATA1,
+    MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
 };
 
 // Ack phase succeeded - report message (rx or tx) to calling code
@@ -665,7 +672,7 @@ data_state_line_error(struct can2040 *cd)
 static void
 data_state_line_passive(struct can2040 *cd)
 {
-    if (cd->parse_state == MS_HEADER) {
+    if (cd->parse_state == MS_START) {
         if (!cd->unstuf.count_stuff && cd->unstuf.stuffed_bits == 0xffffffff) {
             // Counter overflow in "sync" state machine - reset it
             pio_sync_setup(cd);
@@ -673,7 +680,7 @@ data_state_line_passive(struct can2040 *cd)
             data_state_go_discard(cd);
             return;
         }
-        data_state_go_next(cd, MS_HEADER, 18);
+        data_state_go_next(cd, MS_START, 1);
         return;
     }
     if (cd->parse_state != MS_EOF)
@@ -681,7 +688,7 @@ data_state_line_passive(struct can2040 *cd)
     pio_sync_disable_may_start_tx_irq(cd);
     pio_ack_cancel(cd);
     tx_do_schedule(cd);
-    data_state_go_next(cd, MS_HEADER, 18);
+    data_state_go_next(cd, MS_START, 1);
     cd->notify_pending = 0;
 }
 
@@ -689,6 +696,7 @@ data_state_line_passive(struct can2040 *cd)
 static void
 data_state_line_may_start_transmit(struct can2040 *cd)
 {
+    unstuf_force_idle(&cd->unstuf);
     data_state_line_passive(cd);
 }
 
@@ -739,11 +747,20 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
         data_state_go_crc(cd);
 }
 
-// Handle reception of initial 19 header bits (start-of-frame (SOF) + 18 bits)
+// Handle reception of first bit of header (after start-of-frame (SOF))
+static void
+data_state_update_start(struct can2040 *cd, uint32_t data)
+{
+    pio_sync_enable_may_start_tx_irq(cd);
+    cd->parse_msg.id = data;
+    data_state_go_next(cd, MS_HEADER, 17);
+}
+
+// Handle reception of next 17 header bits
 static void
 data_state_update_header(struct can2040 *cd, uint32_t data)
 {
-    pio_sync_enable_may_start_tx_irq(cd);
+    data |= cd->parse_msg.id << 17;
     cd->parse_crc = crcbits(0, data, 18);
     if ((data & 0x60) == 0x60) {
         // Extended header
@@ -842,6 +859,7 @@ static void
 data_state_update(struct can2040 *cd, uint32_t data)
 {
     switch (cd->parse_state) {
+    case MS_START: data_state_update_start(cd, data); break;
     case MS_HEADER: data_state_update_header(cd, data); break;
     case MS_EXT_HEADER: data_state_update_ext_header(cd, data); break;
     case MS_DATA0: data_state_update_data0(cd, data); break;
@@ -966,7 +984,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
 
     // Kick transmitter
     __disable_irq();
-    if (cd->parse_state == MS_HEADER)
+    if (cd->parse_state == MS_START)
         // XXX - not a good way to start tx
         tx_do_schedule(cd);
     __enable_irq();
