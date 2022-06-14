@@ -22,7 +22,6 @@ enum {
 enum {
     CAN2040_NOTIFY_RX = 1<<20,
     CAN2040_NOTIFY_TX = 1<<21,
-    CAN2040_NOTIFY_TX_FAIL = 1<<22,
     CAN2040_NOTIFY_ERROR = 1<<23,
 };
 struct can2040;
@@ -66,7 +65,6 @@ struct can2040 {
     struct can2040_msg parse_msg;
 
     // Bit unstuffing
-    uint8_t latest_rx;
     struct can2040_bitunstuffer unstuf;
     uint32_t raw_bit_count;
 
