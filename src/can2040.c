@@ -751,6 +751,13 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 static void
 data_state_update_start(struct can2040 *cd, uint32_t data)
 {
+    // Make sure there was at last 9 passive bits prior
+    uint32_t ps = cd->unstuf.stuffed_bits >> (cd->unstuf.count_stuff + 2);
+    if ((ps + 1) & 0x1ff) {
+        data_state_go_discard(cd);
+        return;
+    }
+
     pio_sync_enable_may_start_tx_irq(cd);
     cd->parse_msg.id = data;
     data_state_go_next(cd, MS_HEADER, 17);
