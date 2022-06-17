@@ -405,10 +405,8 @@ unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t count)
 static void
 unstuf_clear_state(struct can2040_bitunstuffer *bu)
 {
-    uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
-    uint32_t cs = bu->count_stuff, re = edges >> cs;
-    if (!(re & 1) && (re & 0xf))
-        bu->stuffed_bits ^= 1 << cs;
+    uint32_t lb = 1 << bu->count_stuff;
+    bu->stuffed_bits = (bu->stuffed_bits & (lb - 1)) | lb;
 }
 
 // Force passive state
@@ -710,11 +708,11 @@ data_state_line_may_start_transmit(struct can2040 *cd)
     data_state_line_passive(cd);
 }
 
-// Transition to MS_CRC state - await 15 bits of crc
+// Transition to MS_CRC state - await 16 bits of crc
 static void
 data_state_go_crc(struct can2040 *cd)
 {
-    data_state_go_next(cd, MS_CRC, 15);
+    data_state_go_next(cd, MS_CRC, 16);
     cd->parse_crc &= 0x7fff;
 
     // Setup for ack injection (if receiving) or ack confirmation (if transmit)
@@ -822,26 +820,26 @@ data_state_update_data1(struct can2040 *cd, uint32_t data)
     data_state_go_crc(cd);
 }
 
-// Handle reception of 15 bits of message CRC
+// Handle reception of 16 bits of message CRC (15 crc bits + crc delimiter)
 static void
 data_state_update_crc(struct can2040 *cd, uint32_t data)
 {
-    if (cd->parse_crc != data) {
+    if (((cd->parse_crc << 1) | 1) != data) {
         pio_ack_cancel(cd);
         data_state_go_discard(cd);
         return;
     }
 
     unstuf_clear_state(&cd->unstuf);
-    data_state_go_next(cd, MS_ACK, 3);
+    data_state_go_next(cd, MS_ACK, 2);
 }
 
-// Handle reception of 3 bits of ack phase (crc delimiter, ack, ack delimiter)
+// Handle reception of 2 bits of ack phase (ack, ack delimiter)
 static void
 data_state_update_ack(struct can2040 *cd, uint32_t data)
 {
     pio_ack_cancel(cd);
-    if (data != 0x05) {
+    if (data != 0x01) {
         data_state_go_discard(cd);
         return;
     }
