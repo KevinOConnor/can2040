@@ -74,9 +74,9 @@ public tx_start:
     mov pins, x                 ; cp=31
     wait 1 irq 4
     jmp pin tx_got_recessive    ; cp=26
-public tx_error_loop:
     jmp !x tx_start        [2]  ; cp=27
-    ;jmp tx_error_loop          ; wrap based jump
+public tx_conflict:
+    irq wait 7
 
 
 //
@@ -115,6 +115,7 @@ public tx_error_loop:
     // CPU first disables state machine execution
     // CPU clears irq 2 and irq 3
     // CPU then loads tx fifos with full (bitstuffed) message
+    set pins, 1
     ;jmp tx_start
     wait 1 irq 0
     // CPU then starts state machine execution
@@ -126,6 +127,7 @@ public tx_error_loop:
     // CPU changes instruction at tx_loop from "nop" to:
     irq wait 3
     // CPU then loads tx fifo with ack (single off bit)
+    set pins, 1
     ;jmp tx_start
     wait 1 irq 2
     // CPU then starts state machine execution
