@@ -8,7 +8,6 @@ improvement.
 
 * Optimizations:
   * Further optimize bitstuff/bitunstuff code
-  * Optimize crc calculation
 
 * Improve support for running across rp2040 ARM cores.
 

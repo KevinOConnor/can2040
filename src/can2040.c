@@ -372,14 +372,20 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
  * CRC calculation
  ****************************************************************/
 
-// Update a crc with 'count' number of bits from 'data'
+// Calculated 4-bit crc table (see scripts/crc.py)
+static const uint16_t crc_table[16] = {
+    0x0000, 0x4599, 0x4eab, 0x0b32, 0x58cf, 0x1d56, 0x1664, 0x53fd,
+    0x7407, 0x319e, 0x3aac, 0x7f35, 0x2cc8, 0x6951, 0x6263, 0x27fa
+};
+
+// Update a crc with 'count' number of bits (count must be multiple of 4)
 static uint32_t
 crcbits(uint32_t crc, uint32_t data, uint32_t count)
 {
     int i;
-    for (i=count-1; i>=0; i--) {
-        uint32_t bit = (data >> i) & 1;
-        crc = ((crc >> 14) & 1) ^ bit ? (crc << 1) ^ 0x4599 : (crc << 1);
+    for (i=count-4; i>=0; i-=4) {
+        uint32_t pos = ((crc >> 11) ^ (data >> i)) & 0x0f;
+        crc = (crc << 4) ^ crc_table[pos];
     }
     return crc;
 }
@@ -775,7 +781,7 @@ static void
 data_state_update_header(struct can2040 *cd, uint32_t data)
 {
     data |= cd->parse_msg.id << 17;
-    cd->parse_crc = crcbits(0, data, 18);
+    cd->parse_crc = crcbits(0, data, 20);
     if ((data & 0x60) == 0x60) {
         // Extended header
         cd->parse_msg.id = data;
@@ -979,14 +985,14 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
         uint32_t id = qt->msg.id;
         uint32_t hdr1 = ((id & 0x7ff) << 7) | 0x60 | ((id >> 24) & 0x1f);
         uint32_t hdr2 = (((id >> 11) & 0x1fff) << 7) | edlc;
-        crc = crcbits(crc, hdr1, 19);
+        crc = crcbits(crc, hdr1, 20);
         bs_push(&bs, hdr1, 19);
         crc = crcbits(crc, hdr2, 20);
         bs_push(&bs, hdr2, 20);
     } else {
         // Standard header
         uint32_t hdr = ((qt->msg.id & 0x7ff) << 7) | edlc;
-        crc = crcbits(crc, hdr, 19);
+        crc = crcbits(crc, hdr, 20);
         bs_push(&bs, hdr, 19);
     }
     int i;
