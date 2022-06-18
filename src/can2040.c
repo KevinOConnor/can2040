@@ -478,9 +478,9 @@ bitstuff(uint32_t *pb, uint32_t num_bits)
     return count;
 }
 
-// State storage for building bit stuffed (and crc'ed) transmit messages
+// State storage for building bit stuffed transmit messages
 struct bitstuffer_s {
-    uint32_t prev_stuffed, bitpos, *buf, crc;
+    uint32_t prev_stuffed, bitpos, *buf;
 };
 
 // Push 'count' bits of 'data' into stuffer without performing bit stuffing
@@ -504,7 +504,6 @@ static void
 bs_push(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 {
     data &= (1 << count) - 1;
-    bs->crc = crcbits(bs->crc, data, count);
     uint32_t stuf = (bs->prev_stuffed << count) | data;
     uint32_t newcount = bitstuff(&stuf, count);
     bs_pushraw(bs, stuf, newcount);
@@ -971,16 +970,32 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     memcpy(qt->msg.data, msg->data, data_len);
 
     // Calculate crc and stuff bits
+    uint32_t crc = 0;
     memset(qt->stuffed_data, 0, sizeof(qt->stuffed_data));
-    struct bitstuffer_s bs = { 1, 0, qt->stuffed_data, 0 };
-    bs_push(&bs, qt->msg.id & 0x7ff, 12);
-    if (qt->msg.id & CAN2040_ID_EFF)
-        bs_push(&bs, ((qt->msg.id >> 11) & 0x3ffff) | 0xc0000, 20);
-    bs_push(&bs, qt->msg.dlc | (qt->msg.id & CAN2040_ID_RTR ? 0x40 : 0), 7);
+    struct bitstuffer_s bs = { 1, 0, qt->stuffed_data };
+    uint32_t edlc = qt->msg.dlc | (qt->msg.id & CAN2040_ID_RTR ? 0x40 : 0);
+    if (qt->msg.id & CAN2040_ID_EFF) {
+        // Extended header
+        uint32_t id = qt->msg.id;
+        uint32_t hdr1 = ((id & 0x7ff) << 7) | 0x60 | ((id >> 24) & 0x1f);
+        uint32_t hdr2 = (((id >> 11) & 0x1fff) << 7) | edlc;
+        crc = crcbits(crc, hdr1, 19);
+        bs_push(&bs, hdr1, 19);
+        crc = crcbits(crc, hdr2, 20);
+        bs_push(&bs, hdr2, 20);
+    } else {
+        // Standard header
+        uint32_t hdr = ((qt->msg.id & 0x7ff) << 7) | edlc;
+        crc = crcbits(crc, hdr, 19);
+        bs_push(&bs, hdr, 19);
+    }
     int i;
-    for (i=0; i<data_len; i++)
-        bs_push(&bs, qt->msg.data[i], 8);
-    qt->crc = bs.crc & 0x7fff;
+    for (i=0; i<data_len; i++) {
+        uint32_t v = qt->msg.data[i];
+        crc = crcbits(crc, v, 8);
+        bs_push(&bs, v, 8);
+    }
+    qt->crc = crc & 0x7fff;
     bs_push(&bs, qt->crc, 15);
     bs_pushraw(&bs, 1, 1);
     qt->stuffed_words = bs_finalize(&bs);
