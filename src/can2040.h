@@ -17,8 +17,6 @@ enum {
     CAN2040_ID_EFF = 1<<31,
 };
 
-#define CAN2040_DATA_LEN(msg) ((msg)->dlc > 8 ? 8 : (msg)->dlc)
-
 enum {
     CAN2040_NOTIFY_RX = 1<<20,
     CAN2040_NOTIFY_TX = 1<<21,

@@ -964,7 +964,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     else
         qt->msg.id = id & (CAN2040_ID_RTR | 0x7ff);
     qt->msg.dlc = msg->dlc & 0x0f;
-    uint32_t data_len = CAN2040_DATA_LEN(&qt->msg);
+    uint32_t data_len = qt->msg.dlc > 8 ? 8 : qt->msg.dlc;
     if (qt->msg.id & CAN2040_ID_RTR)
         data_len = 0;
     qt->msg.data32[0] = qt->msg.data32[1] = 0;
