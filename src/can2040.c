@@ -797,8 +797,8 @@ data_state_update_ext_header(struct can2040 *cd, uint32_t data)
 {
     cd->parse_crc = crcbits(cd->parse_crc, data, 20);
     uint32_t hdr1 = cd->parse_msg.id;
-    uint32_t id = (((hdr1 >> 7) & 0x7ff) | ((hdr1 & 0x1f) << 24)
-                   | ((data >> 7) << 11) | CAN2040_ID_EFF);
+    uint32_t id = (((hdr1 << 11) & 0x1ffc0000) | ((hdr1 << 13) & 0x3e000)
+                   | (data >> 7) | CAN2040_ID_EFF);
     data_state_go_data(cd, id, data);
 }
 
@@ -983,12 +983,12 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     if (qt->msg.id & CAN2040_ID_EFF) {
         // Extended header
         uint32_t id = qt->msg.id;
-        uint32_t hdr1 = ((id & 0x7ff) << 7) | 0x60 | ((id >> 24) & 0x1f);
-        uint32_t hdr2 = (((id >> 11) & 0x1fff) << 7) | edlc;
-        crc = crcbits(crc, hdr1, 20);
-        bs_push(&bs, hdr1, 19);
-        crc = crcbits(crc, hdr2, 20);
-        bs_push(&bs, hdr2, 20);
+        uint32_t h1 = ((id & 0x1ffc0000) >> 11) | 0x60 | ((id & 0x3e000) >> 13);
+        uint32_t h2 = ((id & 0x1fff) << 7) | edlc;
+        crc = crcbits(crc, h1, 20);
+        bs_push(&bs, h1, 19);
+        crc = crcbits(crc, h2, 20);
+        bs_push(&bs, h2, 20);
     } else {
         // Standard header
         uint32_t hdr = ((qt->msg.id & 0x7ff) << 7) | edlc;
