@@ -672,7 +672,7 @@ tx_line_may_start_transmit(struct can2040 *cd)
 // Parsing states (stored in cd->parse_state)
 enum {
     MS_START, MS_HEADER, MS_EXT_HEADER, MS_DATA0, MS_DATA1,
-    MS_CRC, MS_ACK, MS_EOF, MS_DISCARD
+    MS_CRC, MS_ACK, MS_EOF0, MS_EOF1, MS_DISCARD
 };
 
 // Transition to the next parsing state
@@ -688,6 +688,14 @@ static void
 data_state_go_discard(struct can2040 *cd)
 {
     tx_note_parse_error(cd);
+
+    if (pio_rx_check_stall(cd)) {
+        // CPU couldn't keep up for some read data - must reset pio state
+        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
+        pio_sm_setup(cd);
+        report_error(cd, 0);
+    }
+
     data_state_go_next(cd, MS_DISCARD, 32);
 }
 
@@ -702,30 +710,28 @@ data_state_line_error(struct can2040 *cd)
 static void
 data_state_line_passive(struct can2040 *cd)
 {
-    if (cd->parse_state == MS_START) {
-        if (!cd->unstuf.count_stuff && cd->unstuf.stuffed_bits == 0xffffffff) {
-            // Counter overflow in "sync" state machine - reset it
-            pio_sync_setup(cd);
-            cd->unstuf.stuffed_bits = 0;
-            data_state_go_discard(cd);
-            return;
-        }
-        data_state_go_next(cd, MS_START, 1);
-        return;
-    }
-
-    if (pio_rx_check_stall(cd)) {
-        // CPU couldn't keep up for some read data - must reset pio state
-        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
-        pio_sm_setup(cd);
-        report_error(cd, 0);
+    if (cd->parse_state != MS_DISCARD) {
+        // Bitstuff error
         data_state_go_discard(cd);
         return;
     }
 
-    if (cd->parse_state != MS_EOF)
-        tx_note_parse_error(cd);
-    data_state_go_next(cd, MS_START, 1);
+    uint32_t stuffed_bits = cd->unstuf.stuffed_bits >> cd->unstuf.count_stuff;
+    if (stuffed_bits == 0xffffffff) {
+        // Counter overflow in "sync" state machine - reset it
+        pio_sync_setup(cd);
+        cd->unstuf.stuffed_bits = 0;
+        data_state_go_discard(cd);
+        return;
+    }
+
+    // Look for sof after 9 passive bits (most "PIO sync" will produce)
+    if (((stuffed_bits + 1) & 0x1ff) == 0) {
+        data_state_go_next(cd, MS_START, 1);
+        return;
+    }
+
+    data_state_go_discard(cd);
 }
 
 // Transition to MS_CRC state - await 16 bits of crc
@@ -764,13 +770,6 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 static void
 data_state_update_start(struct can2040 *cd, uint32_t data)
 {
-    // Make sure there was at last 9 passive bits prior
-    uint32_t ps = cd->unstuf.stuffed_bits >> (cd->unstuf.count_stuff + 2);
-    if ((ps + 1) & 0x1ff) {
-        data_state_go_discard(cd);
-        return;
-    }
-
     cd->parse_msg.id = data;
     tx_note_message_start(cd);
     data_state_go_next(cd, MS_HEADER, 17);
@@ -847,15 +846,30 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
         return;
     }
     tx_note_ack_success(cd);
-    data_state_go_next(cd, MS_EOF, 6);
+    data_state_go_next(cd, MS_EOF0, 4);
 }
 
-// Handle reception of end-of-frame (EOF) bits (only called on an error)
+// Handle reception of first four end-of-frame (EOF) bits
 static void
-data_state_update_eof(struct can2040 *cd, uint32_t data)
+data_state_update_eof0(struct can2040 *cd, uint32_t data)
 {
-    // The end-of-frame should have raised a bitstuff condition..
-    data_state_go_discard(cd);
+    if (data != 0x0f || pio_rx_check_stall(cd)) {
+        data_state_go_discard(cd);
+        return;
+    }
+    unstuf_clear_state(&cd->unstuf);
+    data_state_go_next(cd, MS_EOF1, 4);
+}
+
+// Handle reception of end-of-frame (EOF) bits 5-7 and first IFS bit
+static void
+data_state_update_eof1(struct can2040 *cd, uint32_t data)
+{
+    if (data != 0x0f) {
+        data_state_go_discard(cd);
+        return;
+    }
+    data_state_go_next(cd, MS_START, 1);
 }
 
 // Handle data received while in MS_DISCARD state
@@ -877,7 +891,8 @@ data_state_update(struct can2040 *cd, uint32_t data)
     case MS_DATA1: data_state_update_data1(cd, data); break;
     case MS_CRC: data_state_update_crc(cd, data); break;
     case MS_ACK: data_state_update_ack(cd, data); break;
-    case MS_EOF: data_state_update_eof(cd, data); break;
+    case MS_EOF0: data_state_update_eof0(cd, data); break;
+    case MS_EOF1: data_state_update_eof1(cd, data); break;
     case MS_DISCARD: data_state_update_discard(cd, data); break;
     }
 }
