@@ -22,6 +22,8 @@
 
 // Helper compiler definitions
 #define barrier() __asm__ __volatile__("": : :"memory")
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 
@@ -427,16 +429,14 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
     uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
     uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
     uint32_t cs = bu->count_stuff, cu = bu->count_unstuff;
+    if (!cs)
+        // Need more data
+        return 1;
     for (;;) {
-        if (! cu)
-            // Extracted desired bits
-            return 0;
-        if (! cs)
-            // Need more data
-            return 1;
         uint32_t try_cnt = cs > cu ? cu : cs;
         for (;;) {
-            if (!((rm_bits >> (cs + 1 - try_cnt)) & ((1 << try_cnt) - 1))) {
+            uint32_t try_mask = ((1 << try_cnt) - 1) << (cs + 1 - try_cnt);
+            if (likely(!(rm_bits & try_mask))) {
                 // No stuff bits in try_cnt bits - copy into unstuffed_bits
                 bu->count_unstuff = cu = cu - try_cnt;
                 bu->count_stuff = cs = cs - try_cnt;
@@ -451,7 +451,7 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
                 try_cnt /= 2;
                 continue;
             }
-            if (rm_bits & (1 << cs)) {
+            if (unlikely(rm_bits & (1 << cs))) {
                 // Six consecutive bits - a bitstuff error
                 if ((sb >> cs) & 1)
                     return -1;
@@ -462,6 +462,12 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
             if (!try_cnt)
                 break;
         }
+        if (! cu)
+            // Extracted desired bits
+            return 0;
+        if (likely(!cs))
+            // Need more data
+            return 1;
     }
 }
 
@@ -918,20 +924,19 @@ process_rx(struct can2040 *cd, uint32_t rx_byte)
     // undo bit stuffing
     for (;;) {
         int ret = unstuf_pull_bits(&cd->unstuf);
-        if (!ret) {
-            // Pulled the next field - process it
-            data_state_update(cd, cd->unstuf.unstuffed_bits);
-        } else if (ret > 0) {
+        if (likely(ret > 0)) {
             // Need more data
             break;
+        } else if (likely(!ret)) {
+            // Pulled the next field - process it
+            data_state_update(cd, cd->unstuf.unstuffed_bits);
         } else {
-            if (ret == -1) {
+            if (ret == -1)
                 // 6 consecutive high bits
                 data_state_line_passive(cd);
-            } else {
+            else
                 // 6 consecutive low bits
                 data_state_line_error(cd);
-            }
         }
     }
 }
@@ -942,10 +947,12 @@ can2040_pio_irq_handler(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t ints = pio_hw->ints0;
-    while (ints & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS) {
+    while (likely(ints & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS)) {
         uint8_t rx_byte = pio_hw->rxf[1];
         process_rx(cd, rx_byte);
         ints = pio_hw->ints0;
+        if (likely(!ints))
+            return;
     }
 
     if (ints & (PIO_IRQ0_INTE_SM2_BITS|PIO_IRQ0_INTE_SM3_BITS))
