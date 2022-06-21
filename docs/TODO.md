@@ -6,9 +6,6 @@ improvement.
     errors, along with guidelines for disabling bus on excessive
     errors.
 
-* Optimizations:
-  * Further optimize bitstuff/bitunstuff code
-
 * Improve support for running across rp2040 ARM cores.
 
 * Add documentation:

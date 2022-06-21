@@ -50,11 +50,48 @@ def bitunstuf(sb, num_bits):
                 return -1;
             return -2;
 
+def bitunstuf_batch(sb, num_bits):
+    edges = sb ^ (sb >> 1);
+    e2 = edges | (edges >> 1)
+    e4 = e2 | (e2 >> 2)
+    rm_bits = ~e4
+    ub = 0
+    cu = TESTBITS
+    cs = num_bits
+    while 1:
+        if not cu:
+            return ub
+        if not cs:
+            report("Ran out of bits")
+            return -1
+        try_cnt = cu if cu < cs else cs
+        while 1:
+            if not (rm_bits >> (cs + 1 - try_cnt)) & ((1 << try_cnt) - 1):
+                cu -= try_cnt
+                cs -= try_cnt
+                ub |= ((sb >> cs) & ((1 << try_cnt) - 1)) << cu
+                break
+            cs -= 1
+            if not rm_bits & (1 << (cs + 1)):
+                cu -= 1
+                ub |= ((sb >> cs) & 1) << cu
+                try_cnt //= 2
+                continue
+            if rm_bits & (1 << cs):
+                # Six consecutive bits - a bitstuff error
+                report("Bitstuff error")
+                if (sb >> cs) & 1:
+                    return -1;
+                return -2;
+            try_cnt -= 1
+            if not try_cnt:
+                break
+
 def main():
     for i in range(1<<20):
         val = i | (1 << (TESTBITS+1))
         sv, sc = bitstuf(val, TESTBITS)
-        uv = bitunstuf(sv, sc)
+        uv = bitunstuf_batch(sv, sc)
         if i != uv:
             report("Mismatch on %d: %s -> %s -> %s (%d)"
                    % (i, format(val, '025b'), format(sv, '025b')

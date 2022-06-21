@@ -425,36 +425,42 @@ static int
 unstuf_pull_bits(struct can2040_bitunstuffer *bu)
 {
     uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
-    uint32_t ub = bu->unstuffed_bits;
+    uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
     uint32_t cs = bu->count_stuff, cu = bu->count_unstuff;
     for (;;) {
-        if (!cu) {
+        if (! cu)
             // Extracted desired bits
-            bu->unstuffed_bits = ub;
-            bu->count_stuff = cs;
-            bu->count_unstuff = cu;
             return 0;
-        }
-        if (!cs) {
+        if (! cs)
             // Need more data
-            bu->unstuffed_bits = ub;
-            bu->count_stuff = cs;
-            bu->count_unstuff = cu;
             return 1;
-        }
-        cs--;
-        if ((edges >> (cs+1)) & 0xf) {
-            // Normal data
-            cu--;
-            ub |= ((sb >> cs) & 1) << cu;
-        } else if (((edges >> cs) & 0x1f) == 0x00) {
-            // Six consecutive bits - a bitstuff error
-            bu->unstuffed_bits = ub;
-            bu->count_stuff = cs;
-            bu->count_unstuff = cu;
-            if ((sb >> cs) & 1)
-                return -1;
-            return -2;
+        uint32_t try_cnt = cs > cu ? cu : cs;
+        for (;;) {
+            if (!((rm_bits >> (cs + 1 - try_cnt)) & ((1 << try_cnt) - 1))) {
+                // No stuff bits in try_cnt bits - copy into unstuffed_bits
+                bu->count_unstuff = cu = cu - try_cnt;
+                bu->count_stuff = cs = cs - try_cnt;
+                bu->unstuffed_bits |= ((sb >> cs) & ((1 << try_cnt) - 1)) << cu;
+                break;
+            }
+            bu->count_stuff = cs = cs - 1;
+            if (!(rm_bits & (1 << (cs + 1)))) {
+                // High bit not a stuff bit - limit try_cnt and retry
+                bu->count_unstuff = cu = cu - 1;
+                bu->unstuffed_bits |= ((sb >> cs) & 1) << cu;
+                try_cnt /= 2;
+                continue;
+            }
+            if (rm_bits & (1 << cs)) {
+                // Six consecutive bits - a bitstuff error
+                if ((sb >> cs) & 1)
+                    return -1;
+                return -2;
+            }
+            // High bit of try_cnt a stuff bit - skip it and retry
+            try_cnt--;
+            if (!try_cnt)
+                break;
         }
     }
 }
