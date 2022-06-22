@@ -48,7 +48,7 @@ def crc_byteloop(data):
     return crc & 0x7fff
 
 # A 4-bit at a time table lookup version
-def crc_4bittable(table, data):
+def crc_4bit_table(table, data):
     crc = 0
     l = len(data) - 1
     val = sum([v << ((l-i)*8) for i, v in enumerate(data)])
@@ -58,17 +58,27 @@ def crc_4bittable(table, data):
         crc = (crc << 4) ^ table[pos]
     return crc & 0x7fff
 
+# A 8-bit at a time table lookup version
+def crc_8bit_table(table, data):
+    crc = 0
+    for v in data:
+        crc = (crc << 8) ^ table[((crc >> 7) ^ v) & 0xff]
+    return crc & 0x7fff
+
 TESTDATA = b"Some string of data"
 
 def main():
-    # Build table version
-    table = [crc_bitloop([i]) for i in range(16)]
-    print("Table:", ", ".join(["0x%04x" % i for i in table]))
+    # Build 4bit table version
+    bit4_table = [crc_bitloop([i]) for i in range(16)]
+    print("Table 4bit:", ", ".join(["0x%04x" % i for i in bit4_table]))
+    # Build 8bit table version
+    bit8_table = [crc_bitloop([i]) for i in range(256)]
+    print("Table 8bit:", ",".join(["0x%04x" % i for i in bit8_table]))
     # Test versions
     for i in range(len(TESTDATA)):
         d = TESTDATA[i:]
         crc1 = crc_bitloop(d)
-        crc2 = crc_4bittable(table, d)
+        crc2 = crc_8bit_table(bit8_table, d)
         if crc1 != crc2:
             report("Got mismatch on '%s' %02x vs %02x" % (d, crc1, crc2))
             sys.exit(-1)
