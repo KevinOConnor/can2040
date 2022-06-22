@@ -479,18 +479,37 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
 static uint32_t
 bitstuff(uint32_t *pb, uint32_t num_bits)
 {
-    uint32_t b = *pb, edges = b ^ (b >> 1), count = num_bits;
-    int i;
-    for (i=num_bits-1; i>=0; i--) {
-        if (!((edges >> i) & 0xf)) {
-            uint32_t mask = (1 << (i + 1)) - 1;
-            uint32_t low = b & mask, high = (b & ~(mask >> 1)) << 1;
-            b = high ^ low ^ (1 << i);
-            i -= 3;
-            count++;
-            edges = b ^ (b >> 1);
+    uint32_t b = *pb, count = num_bits;
+    for (;;) {
+        uint32_t try_cnt = num_bits, edges = b ^ (b >> 1);
+        uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), add_bits = ~e4;
+        for (;;) {
+            uint32_t try_mask = ((1 << try_cnt) - 1) << (num_bits - try_cnt);
+            if (!(add_bits & try_mask)) {
+                // No stuff bits needed in try_cnt bits
+                if (try_cnt >= num_bits)
+                    goto done;
+                num_bits -= try_cnt;
+                try_cnt = (num_bits + 1) / 2;
+                continue;
+            }
+            if (add_bits & (1 << (num_bits - 1))) {
+                // A stuff bit must be inserted prior to the high bit
+                uint32_t low_mask = (1 << num_bits) - 1, low = b & low_mask;
+                uint32_t high = (b & ~(low_mask >> 1)) << 1;
+                b = high ^ low ^ (1 << (num_bits - 1));
+                count += 1;
+                if (num_bits <= 4)
+                    goto done;
+                num_bits -= 4;
+                break;
+            }
+            // High bit doesn't need stuff bit - accept it, limit try_cnt, retry
+            num_bits--;
+            try_cnt /= 2;
         }
     }
+done:
     *pb = b;
     return count;
 }

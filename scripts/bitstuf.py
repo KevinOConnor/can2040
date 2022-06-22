@@ -31,6 +31,40 @@ def bitstuf(b, num_bits):
         i -= 1
     return b, count
 
+def bitstuf_batch(b, num_bits):
+    global LOOP
+    count = num_bits
+    while 1:
+        edges = b ^ (b >> 1)
+        e2 = edges | (edges >> 1)
+        e4 = e2 | (e2 >> 2)
+        add_bits = ~e4
+        try_cnt = num_bits
+        while 1:
+            LOOP += 1
+            try_mask = ((1 << try_cnt) - 1) << (num_bits - try_cnt)
+            if not add_bits & try_mask:
+                # No stuff bits needed in try_cnt bits
+                if try_cnt >= num_bits:
+                    return b, count
+                num_bits -= try_cnt
+                try_cnt = (num_bits + 1) // 2
+                continue
+            if add_bits & (1 << (num_bits - 1)):
+                # A stuff bit must be inserted prior to the high bit
+                low_mask = (1 << num_bits) - 1
+                low = b & low_mask
+                high = (b & ~(low_mask >> 1)) << 1
+                b = high ^ low ^ (1 << (num_bits - 1))
+                count += 1
+                if num_bits <= 4:
+                    return b, count
+                num_bits -= 4
+                break
+            # High bit doesn't need stuff bit - accept it, limit try_cnt, retry
+            num_bits -= 1
+            try_cnt //= 2
+
 def bitunstuf(sb, num_bits):
     global UNLOOP
     edges = sb ^ (sb >> 1)
@@ -141,7 +175,7 @@ def bitunstuf_batch_pass4(sb, num_bits):
             try_cnt //= 2
 
 def main():
-    stuf_func = bitstuf
+    stuf_func = bitstuf_batch
     unstuf_func = bitunstuf_batch
     for i in range(1<<TESTBITS):
         if not i % (1<<12):
