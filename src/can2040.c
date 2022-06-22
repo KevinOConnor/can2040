@@ -443,30 +443,27 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
                 bu->count_unstuff = cu = cu - try_cnt;
                 bu->count_stuff = cs = cs - try_cnt;
                 bu->unstuffed_bits |= ((sb >> cs) & ((1 << try_cnt) - 1)) << cu;
+                if (! cu)
+                    // Extracted desired bits
+                    return 0;
                 break;
             }
             bu->count_stuff = cs = cs - 1;
-            if (!(rm_bits & (1 << (cs + 1)))) {
-                // High bit not a stuff bit - limit try_cnt and retry
-                bu->count_unstuff = cu = cu - 1;
-                bu->unstuffed_bits |= ((sb >> cs) & 1) << cu;
-                try_cnt /= 2;
-                continue;
-            }
-            if (unlikely(rm_bits & (1 << cs))) {
-                // Six consecutive bits - a bitstuff error
-                if ((sb >> cs) & 1)
-                    return -1;
-                return -2;
-            }
-            // High bit of try_cnt a stuff bit - skip it and retry
-            try_cnt--;
-            if (!try_cnt)
+            if (rm_bits & (1 << (cs + 1))) {
+                // High bit of try_cnt a stuff bit
+                if (unlikely(rm_bits & (1 << cs))) {
+                    // Six consecutive bits - a bitstuff error
+                    if ((sb >> cs) & 1)
+                        return -1;
+                    return -2;
+                }
                 break;
+            }
+            // High bit not a stuff bit - limit try_cnt and retry
+            bu->count_unstuff = cu = cu - 1;
+            bu->unstuffed_bits |= ((sb >> cs) & 1) << cu;
+            try_cnt /= 2;
         }
-        if (! cu)
-            // Extracted desired bits
-            return 0;
         if (likely(!cs))
             // Need more data
             return 1;
