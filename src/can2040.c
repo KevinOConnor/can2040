@@ -208,6 +208,8 @@ pio_tx_reset(struct can2040 *cd)
     sm->shiftctrl = 0;
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
+    pio_hw->ctrl = ((0x07 << PIO_CTRL_SM_ENABLE_LSB)
+                    | (0x08 << PIO_CTRL_SM_RESTART_LSB));
 }
 
 // Queue a message for transmission on PIO "tx" state machine
