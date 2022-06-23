@@ -236,10 +236,6 @@ pio_ack_check(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
     pio_hw->txf[2] = key;
-
-    // Raise irq after ack completes
-    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM2_BITS
-                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
 }
 
 // Set PIO "ack" state machine to check a CRC and inject an ack on success
@@ -256,12 +252,7 @@ pio_ack_inject(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
     sm->instr = 0x20c2; // wait 1 irq, 2
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 
-    uint32_t key = (crc_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
-    pio_hw->txf[2] = key;
-
-    // Raise irq after ack completes
-    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM3_BITS
-                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
+    pio_ack_check(cd, crc_bits, rx_bit_pos);
 }
 
 // Cancel any pending checks on PIO "ack" state machine
@@ -282,15 +273,33 @@ pio_rx_check_stall(struct can2040 *cd)
 
 // Enable host irq on a "may start transmit" signal (sm irq 0)
 static void
-pio_sync_set_may_start_tx_irq(struct can2040 *cd)
+pio_irq_set_maytx(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
 }
 
+// Enable host irq on a "may transmit" or "match tx" signal (sm irq 0 or 2)
+static void
+pio_irq_set_maytx_matchtx(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM2_BITS
+                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
+}
+
+// Enable host irq on a "may transmit" or "ack done" signal (sm irq 0 or 3)
+static void
+pio_irq_set_maytx_ackdone(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    pio_hw->inte0 = (PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM3_BITS
+                     | PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS);
+}
+
 // Atomically enable "may start transmit" signal (sm irq 0)
 static void
-pio_sync_atomic_enable_may_start_tx_irq(struct can2040 *cd)
+pio_irq_atomic_set_maytx(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     hw_set_bits(&pio_hw->inte0, PIO_IRQ0_INTE_SM0_BITS);
@@ -298,7 +307,7 @@ pio_sync_atomic_enable_may_start_tx_irq(struct can2040 *cd)
 
 // Disable PIO host irqs (except for normal data read irq)
 static void
-pio_sync_disable_irqs(struct can2040 *cd)
+pio_irq_set_none(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS;
@@ -638,7 +647,6 @@ tx_qpos(struct can2040 *cd, uint32_t pos)
 static void
 tx_schedule_transmit(struct can2040 *cd)
 {
-    pio_sync_disable_irqs(cd);
     if (cd->tx_state >= TS_CONFIRM_ACK) {
         pio_ack_cancel(cd);
     } else if (cd->tx_state == TS_QUEUED) {
@@ -675,6 +683,7 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
         cd->tx_state = TS_CONFIRM_ACK;
         last = (last << 3) | 0x05;
         pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 3);
+        pio_irq_set_maytx_matchtx(cd);
         return;
     }
 
@@ -682,6 +691,7 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     cd->tx_state = TS_ACKING_RX;
     last = (last << 1) | 0x01;
     pio_ack_inject(cd, last, crcstart_bitpos + crc_bitcount + 1);
+    pio_irq_set_maytx_ackdone(cd);
 }
 
 // Ack phase succeeded - report message (rx or tx) to calling code
@@ -700,6 +710,7 @@ tx_note_ack_success(struct can2040 *cd)
     }
 
     pio_sync_normal_start_signal(cd);
+    pio_irq_set_none(cd);
     tx_schedule_transmit(cd);
 }
 
@@ -707,7 +718,7 @@ tx_note_ack_success(struct can2040 *cd)
 static void
 tx_note_message_start(struct can2040 *cd)
 {
-    pio_sync_set_may_start_tx_irq(cd);
+    pio_irq_set_maytx(cd);
 }
 
 // Parser found unexpected data on input
@@ -715,14 +726,15 @@ static void
 tx_note_parse_error(struct can2040 *cd)
 {
     pio_sync_slow_start_signal(cd);
+    pio_irq_set_maytx(cd);
     tx_schedule_transmit(cd);
-    pio_sync_set_may_start_tx_irq(cd);
 }
 
 // Received 10+ passive bits on the line (between 10 and 17 bits)
 static void
 tx_line_may_start_transmit(struct can2040 *cd)
 {
+    pio_irq_set_none(cd);
     tx_schedule_transmit(cd);
 }
 
@@ -1089,7 +1101,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     writel(&cd->tx_push_pos, tx_push_pos + 1);
 
     // Wakeup if in TS_IDLE state
-    pio_sync_atomic_enable_may_start_tx_irq(cd);
+    pio_irq_atomic_set_maytx(cd);
 
     return 0;
 }
