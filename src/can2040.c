@@ -633,7 +633,11 @@ report_tx_msg(struct can2040 *cd, struct can2040_msg *msg)
 
 // Transmit states (stored in cd->tx_state)
 enum {
-    TS_IDLE, TS_QUEUED, TS_CONFIRM_ACK, TS_ACKING_RX
+    TS_FLAG_QUEUED = 1, TS_FLAG_RX = 2, TS_FLAG_ACK = 4, TS_FLAG_EOF = 8,
+    TS_IDLE = 0, TS_QUEUED = TS_FLAG_QUEUED,
+    TS_ACKING_RX = TS_FLAG_RX | TS_FLAG_ACK, TS_CONFIRM_TX = TS_FLAG_ACK,
+    TS_RX_REPORT = TS_FLAG_RX | TS_FLAG_EOF, TS_TX_REPORT = TS_FLAG_EOF,
+    TS_QUEUED_RX_REPORT = TS_FLAG_QUEUED | TS_FLAG_RX | TS_FLAG_EOF,
 };
 
 // Calculate queue array position from a transmit index
@@ -647,12 +651,13 @@ tx_qpos(struct can2040 *cd, uint32_t pos)
 static void
 tx_schedule_transmit(struct can2040 *cd)
 {
-    if (cd->tx_state >= TS_CONFIRM_ACK) {
-        pio_ack_cancel(cd);
-    } else if (cd->tx_state == TS_QUEUED) {
+    if (cd->tx_state & TS_FLAG_QUEUED) {
+        cd->tx_state = TS_QUEUED;
         if (!pio_tx_did_conflict(cd))
             // Already queued or actively transmitting
             return;
+    } else if (cd->tx_state != TS_IDLE) {
+        pio_ack_cancel(cd);
     }
     if (cd->tx_push_pos == cd->tx_pull_pos) {
         // No new messages to transmit
@@ -680,10 +685,9 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
         && qt->msg.data32[0] == pm->data32[0]
         && qt->msg.data32[1] == pm->data32[1]) {
         // This is a self transmit - setup confirmation signal
-        cd->tx_state = TS_CONFIRM_ACK;
-        last = (last << 3) | 0x05;
-        pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 3);
-        pio_irq_set_maytx_matchtx(cd);
+        cd->tx_state = TS_CONFIRM_TX;
+        last = (last << 10) | 0x02ff;
+        pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 10);
         return;
     }
 
@@ -694,14 +698,34 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     pio_irq_set_maytx_ackdone(cd);
 }
 
-// Ack phase succeeded - report message (rx or tx) to calling code
+// Ack phase succeeded
 static void
 tx_note_ack_success(struct can2040 *cd)
 {
-    if (cd->tx_state < TS_CONFIRM_ACK)
+    if (!(cd->tx_state & TS_FLAG_ACK))
         return;
 
-    if (cd->tx_state == TS_CONFIRM_ACK) {
+    if (cd->tx_state == TS_CONFIRM_TX) {
+        pio_irq_set_maytx_matchtx(cd);
+        cd->tx_state = TS_TX_REPORT;
+    } else {
+        pio_irq_set_maytx(cd);
+        tx_schedule_transmit(cd);
+        if (cd->tx_state == TS_QUEUED)
+            cd->tx_state = TS_QUEUED_RX_REPORT;
+        else
+            cd->tx_state = TS_RX_REPORT;
+    }
+}
+
+// EOF phase succeeded - report message (rx or tx) to calling code
+static void
+tx_note_eof_success(struct can2040 *cd)
+{
+    if (!(cd->tx_state & TS_FLAG_EOF))
+        return;
+
+    if (cd->tx_state == TS_TX_REPORT) {
         uint32_t tx_pull_pos = cd->tx_pull_pos;
         cd->tx_pull_pos++;
         report_tx_msg(cd, &cd->tx_queue[tx_qpos(cd, tx_pull_pos)].msg);
@@ -712,6 +736,13 @@ tx_note_ack_success(struct can2040 *cd)
     pio_sync_normal_start_signal(cd);
     pio_irq_set_none(cd);
     tx_schedule_transmit(cd);
+}
+
+// Check if in an "ack rx" state
+static int
+tx_is_acking_rx(struct can2040 *cd)
+{
+    return cd->tx_state & TS_FLAG_RX;
 }
 
 // Parser found a new message start
@@ -734,8 +765,12 @@ tx_note_parse_error(struct can2040 *cd)
 static void
 tx_line_may_start_transmit(struct can2040 *cd)
 {
-    pio_irq_set_none(cd);
-    tx_schedule_transmit(cd);
+    if (cd->tx_state & TS_FLAG_EOF) {
+        tx_note_eof_success(cd);
+    } else {
+        pio_irq_set_none(cd);
+        tx_schedule_transmit(cd);
+    }
 }
 
 
@@ -940,11 +975,14 @@ data_state_update_eof0(struct can2040 *cd, uint32_t data)
 static void
 data_state_update_eof1(struct can2040 *cd, uint32_t data)
 {
-    if (data != 0x0f) {
+    if (data >= 0x0e || (data >= 0x0c && tx_is_acking_rx(cd)))
+        // Message is considered fully transmitted
+        tx_note_eof_success(cd);
+
+    if (data == 0x0f)
+        data_state_go_next(cd, MS_START, 1);
+    else
         data_state_go_discard(cd);
-        return;
-    }
-    data_state_go_next(cd, MS_START, 1);
 }
 
 // Handle data received while in MS_DISCARD state
@@ -1018,9 +1056,12 @@ can2040_pio_irq_handler(struct can2040 *cd)
             return;
     }
 
-    if (ints & (PIO_IRQ0_INTE_SM2_BITS|PIO_IRQ0_INTE_SM3_BITS))
-        // Ack phase completed successfully
+    if (ints & PIO_IRQ0_INTE_SM3_BITS)
+        // Ack of received message completed successfully
         tx_note_ack_success(cd);
+    else if (ints & PIO_IRQ0_INTE_SM2_BITS)
+        // Transmit message completed successfully
+        tx_note_eof_success(cd);
     else if (ints & PIO_IRQ0_INTE_SM0_BITS)
         // Bus is idle, but not all bits may have been flushed yet
         tx_line_may_start_transmit(cd);
