@@ -57,14 +57,17 @@ struct can2040 {
     uint32_t gpio_rx, gpio_tx;
     can2040_rx_cb rx_cb;
 
+    // Bit unstuffing
+    struct can2040_bitunstuffer unstuf;
+    uint32_t raw_bit_count;
+
     // Input data state
     uint32_t parse_state;
     uint32_t parse_crc;
     struct can2040_msg parse_msg;
 
-    // Bit unstuffing
-    struct can2040_bitunstuffer unstuf;
-    uint32_t raw_bit_count;
+    // Reporting
+    uint32_t report_state;
 
     // Transmits
     uint32_t tx_state;
