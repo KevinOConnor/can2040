@@ -271,6 +271,14 @@ pio_rx_check_stall(struct can2040 *cd)
     return pio_hw->fdebug & (1 << (PIO_FDEBUG_RXSTALL_LSB + 1));
 }
 
+// Report number of bytes still pending in PIO "rx" fifo queue
+static int
+pio_rx_fifo_level(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    return (pio_hw->flevel & PIO_FLEVEL_RX1_BITS) >> PIO_FLEVEL_RX1_LSB;
+}
+
 // Enable host irq on a "may start transmit" signal (sm irq 0)
 static void
 pio_irq_set_maytx(struct can2040 *cd)
@@ -732,16 +740,21 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
 
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     struct can2040_msg *pm = &cd->parse_msg;
-    if (cd->tx_state == TS_QUEUED && qt->crc == cd->parse_crc
-        && qt->msg.id == pm->id && qt->msg.dlc == pm->dlc
-        && qt->msg.data32[0] == pm->data32[0]
-        && qt->msg.data32[1] == pm->data32[1]) {
-        // This is a self transmit - setup confirmation signal
-        report_note_crc_start(cd, 1);
-        cd->tx_state = TS_CONFIRM_TX;
-        last = (last << 10) | 0x02ff;
-        pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 10);
-        return;
+    if (cd->tx_state == TS_QUEUED) {
+        if (qt->crc == cd->parse_crc
+            && qt->msg.id == pm->id && qt->msg.dlc == pm->dlc
+            && qt->msg.data32[0] == pm->data32[0]
+            && qt->msg.data32[1] == pm->data32[1]) {
+            // This is a self transmit - setup confirmation signal
+            report_note_crc_start(cd, 1);
+            cd->tx_state = TS_CONFIRM_TX;
+            last = (last << 10) | 0x02ff;
+            pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 10);
+            return;
+        }
+        if (!pio_tx_did_conflict(cd) && pio_rx_fifo_level(cd) > 1)
+            // Rx state is behind - acking wont succeed and may halt active tx
+            return;
     }
 
     // Inject ack
