@@ -130,6 +130,10 @@ The callback is invoked in IRQ context (it is called from
 recommended that the callback copy the given message to memory to be
 processed during normal (non-irq) context.
 
+The `msg` pointer is only valid during the duration of the callback.
+The callback code should copy any desired content from `msg` to its
+own storage during the callback.
+
 The callback is invoked for all valid received messages on the CAN
 bus.  The can2040 code does not implement receive message filtering.
 It is expected that the caller will implement any desired filtering in
@@ -182,7 +186,9 @@ This function schedules a message for transmission on the CAN bus.
 The `msg` parameter should contain a pointer to the `struct
 can2040_msg` that should be sent.  The function returns `0` if the
 message is successfully queued, or a negative number if there is no
-space for the message in the internal queue.
+space for the message in the internal queue.  If scheduled, the
+contents of the `msg` pointer are copied to internal storage during
+the `can2040_transmit()` call.
 
 When a scheduled message is successfully transmitted on the CAN bus
 the user supplied `can2040_rx_cb` callback will be invoked with a
