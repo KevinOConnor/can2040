@@ -612,13 +612,6 @@ bs_finalize(struct bitstuffer_s *bs)
  * Notification callbacks
  ****************************************************************/
 
-// Calculate queue array position from a transmit index
-static uint32_t
-tx_qpos(struct can2040 *cd, uint32_t pos)
-{
-    return pos % ARRAY_SIZE(cd->tx_queue);
-}
-
 // Report state flags (stored in cd->report_state)
 enum {
     RS_IDLE = 0, RS_IS_TX = 1, RS_IN_MSG = 2, RS_AWAIT_EOF = 4,
@@ -643,10 +636,8 @@ report_rx_msg(struct can2040 *cd)
 static void
 report_tx_msg(struct can2040 *cd)
 {
-    uint32_t tx_pull_pos = cd->tx_pull_pos;
     cd->tx_pull_pos++;
-    struct can2040_msg *msg = &cd->tx_queue[tx_qpos(cd, tx_pull_pos)].msg;
-    cd->rx_cb(cd, CAN2040_NOTIFY_TX, msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_TX, &cd->parse_msg);
 }
 
 // A new message is awaiting crc verification
@@ -700,6 +691,13 @@ report_is_acking_rx(struct can2040 *cd)
 enum {
     TS_IDLE = 0, TS_QUEUED = 1, TS_ACKING_RX = 2, TS_CONFIRM_TX = 3
 };
+
+// Calculate queue array position from a transmit index
+static uint32_t
+tx_qpos(struct can2040 *cd, uint32_t pos)
+{
+    return pos % ARRAY_SIZE(cd->tx_queue);
+}
 
 // Queue the next message for transmission in the PIO
 static void
