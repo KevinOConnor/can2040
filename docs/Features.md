@@ -16,6 +16,9 @@ bus implementation.
   It is possible for a single rp2040 chip to have two separate CAN bus
   interfaces by using both PIO blocks.
 
+* Works with standard CAN bus transceivers.  Any two rp2040 gpio pins
+  may be used for the "can rx" and "can tx" wires.
+
 # Software utilization
 
 The can2040 system is a software CAN bus implementation.  It utilizes
