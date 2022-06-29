@@ -750,9 +750,11 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
             pio_ack_check(cd, last, crcstart_bitpos + crc_bitcount + 10);
             return;
         }
-        if (!pio_tx_did_conflict(cd) && pio_rx_fifo_level(cd) > 1)
+        if (!pio_tx_did_conflict(cd) && pio_rx_fifo_level(cd) > 1) {
             // Rx state is behind - acking wont succeed and may halt active tx
+            report_note_crc_start(cd, 0);
             return;
+        }
     }
 
     // Inject ack
