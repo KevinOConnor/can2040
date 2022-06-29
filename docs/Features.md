@@ -34,10 +34,11 @@ software overhead of can2040 when sharing an ARM core.
   traffic, even if that bus traffic is not intended for the node. It
   is expected that a fully saturated CAN bus at the fastest supported
   rate of 1Mbit/s may use up to ~30% of one of the two rp2040 ARM
-  cores.  A slower CAN bus speed would have a lower worst case
-  processing time (for example, a bus speed of 500kbit/s is expected
-  to have half the worst case processing time of a 1Mbit/s bus).  A
-  CAN bus that is idle does not consume any ARM core processing time.
+  cores (when the ARM core is running at 125Mhz).  A slower CAN bus
+  speed would have a lower worst case processing time (for example, a
+  bus speed of 500kbit/s is expected to have half the worst case
+  processing time of a 1Mbit/s bus).  A CAN bus that is idle does not
+  consume any ARM core processing time.
 
 * The can2040 code requires low ARM core "irq latency" for proper
   functionality.  If an ARM core is shared with both application code
@@ -50,7 +51,7 @@ software overhead of can2040 when sharing an ARM core.
   exceeds certain thresholds.  The "bit time" refers to the amount of
   time it takes to transmit one bit on the CAN bus.  It is dependent
   on the CAN bus speed (for example, a bus frequency of 500000 would
-  have a bit time of 2 micro-seconds).
+  have a bit time of 2 microseconds).
 
   Above ~3 bit times of irq latency: After successfully transmitting a
   message, the can2040 code may not have sufficient time to schedule
