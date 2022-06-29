@@ -19,6 +19,52 @@ bus implementation.
 * Works with standard CAN bus transceivers.  Any two rp2040 gpio pins
   may be used for the "can rx" and "can tx" wires.
 
+# Protocol details
+
+This section provides some low-level details on can2040's
+implementation of the CAN bus protocol.  This section is targeted at
+CAN bus experts interested in implementation details.
+
+* Supports clock synchronization for bit timing.  That is, the
+  sampling time is resynchronized on each passive to dominant bit
+  transition.
+
+* Supports verification of SOF (start-of-frame), header, data, CRC,
+  ack, and EOF (end-of-frame) portions of each frame on the CAN bus.
+
+* Will inject an ack bit after verification of message CRC when
+  receiving a message.
+
+* Transmissions will perform "line arbitration".  That is, lower
+  priority transmissions (as based on message id) will yield the bus
+  to higher priority messages.  In addition, the start of
+  transmissions will be aligned to the SOF bit of other transmitters
+  for proper bit timing during line arbitration.
+
+* Support for automatic retransmissions.  If a transmission does not
+  complete successfully (for example, due to an error, lack of
+  acknowledgment, or interrupted by a higher priority message) then
+  it will be automatically retransmitted at the next opportunity.
+
+* Supports sending and receiving "remote frames".
+
+* Support for receiving "overload frames" (they will successfully
+  delay transmission of messages).  The can2040 code does not transmit
+  "overload frames".
+
+* Support for receiving "error frames" (they will halt an active
+  transmission).  However, can2040 does not transmit "error frames".
+
+There are some known limitations with CAN bus error handling:
+
+* The CAN bus specification defines three error handling states:
+  "error active" (ie, normal state), "error passive", and "bus off".
+  Automatic transition between these states is not implemented.  The
+  can2040 code does not transmit "error frames".  The can2040 code
+  will not automatically enter a "bus off" state.  In this regard, the
+  can2040 code may be thought of as always being in the "error
+  passive" state.
+
 # Software utilization
 
 The can2040 system is a software CAN bus implementation.  It utilizes
@@ -81,49 +127,3 @@ software overhead of can2040 when sharing an ARM core.
   will typically take between 1 to 3 microseconds.  (An rp2040
   instruction flash cache miss and/or higher priority irqs may
   increase this time.)
-
-# Protocol details
-
-This section provides some low-level details on can2040's
-implementation of the CAN bus protocol.  This section is targeted at
-CAN bus experts interested in implementation details.
-
-* Supports clock synchronization for bit timing.  That is, the
-  sampling time is resynchronized on each passive to dominant bit
-  transition.
-
-* Supports verification of SOF (start-of-frame), header, data, CRC,
-  ack, and EOF (end-of-frame) portions of each frame on the CAN bus.
-
-* Will inject an ack bit after verification of message CRC when
-  receiving a message.
-
-* Transmissions will perform "line arbitration".  That is, lower
-  priority transmissions (as based on message id) will yield the bus
-  to higher priority messages.  In addition, the start of
-  transmissions will be aligned to the SOF bit of other transmitters
-  for proper bit timing during line arbitration.
-
-* Support for automatic retransmissions.  If a transmission does not
-  complete successfully (for example, due to an error, lack of
-  acknowledgment, or interrupted by a higher priority message) then
-  it will be automatically retransmitted at the next opportunity.
-
-* Supports for sending and receiving "remote frames".
-
-* Support for receiving "overload frames" (they will successfully
-  delay transmission of messages).  The can2040 code does not transmit
-  "overload frames".
-
-* Support for receiving "error frames" (they will halt an active
-  transmission).  However, can2040 does not transmit "error frames".
-
-There are some known limitations with CAN bus error handling:
-
-* The CAN bus specification defines three error handling states:
-  "error active" (ie, normal state), "error passive", and "bus off".
-  Automatic transition between these states is not implemented.  The
-  can2040 code does not transmit "error frames".  The can2040 code
-  will not automatically enter a "bus off" state.  In this regard, the
-  can2040 code may be thought of as always being in the "error
-  passive" state.
