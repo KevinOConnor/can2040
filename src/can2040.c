@@ -43,7 +43,6 @@ static void
 rp2040_clear_reset(uint32_t reset_bit)
 {
     if (resets_hw->reset & reset_bit) {
-        resets_hw->reset &= reset_bit;
         hw_clear_bits(&resets_hw->reset, reset_bit);
         while (!(resets_hw->reset_done & reset_bit))
             ;
