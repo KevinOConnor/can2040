@@ -24,8 +24,9 @@ The following provides example startup C code for can2040:
 static struct can2040 cbus;
 
 static void
-can2040_rx(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
+can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
 {
+    // Add message processing code here...
 }
 
 static void
@@ -43,7 +44,7 @@ canbus_setup(void)
 
     // Setup canbus
     can2040_setup(&cbus, pio_num);
-    can2040_callback_config(&cbus, can2040_rx);
+    can2040_callback_config(&cbus, can2040_cb);
 
     // Enable irqs
     irq_set_exclusive_handler(PIO0_IRQ_0_IRQn, PIOx_IRQHandler);
