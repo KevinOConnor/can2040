@@ -659,6 +659,8 @@ report_note_ack_success(struct can2040 *cd)
 static void
 report_note_eof(struct can2040 *cd)
 {
+    if (cd->report_state == RS_IDLE)
+        return;
     if (cd->report_state & RS_AWAIT_EOF) {
         if (cd->report_state & RS_IS_TX)
             report_tx_msg(cd);
@@ -666,13 +668,17 @@ report_note_eof(struct can2040 *cd)
             report_rx_msg(cd);
     }
     cd->report_state = RS_IDLE;
+    pio_match_clear(cd);
 }
 
 // Parser found unexpected data on input
 static void
 report_note_parse_error(struct can2040 *cd)
 {
+    if (cd->report_state == RS_IDLE)
+        return;
     cd->report_state = RS_IDLE;
+    pio_match_clear(cd);
 }
 
 // Check if in an rx ack is pending
@@ -707,8 +713,6 @@ tx_schedule_transmit(struct can2040 *cd)
         if (!pio_tx_did_conflict(cd))
             // Already queued or actively transmitting
             return;
-    } else if (cd->tx_state != TS_IDLE) {
-        pio_match_clear(cd);
     }
     if (cd->tx_push_pos == cd->tx_pull_pos) {
         // No new messages to transmit
