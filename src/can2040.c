@@ -734,15 +734,14 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     uint32_t cs = cd->unstuf.count_stuff;
     uint32_t crcstart_bitpos = cd->raw_bit_count - cs - 1;
     uint32_t last = ((cd->unstuf.stuffed_bits >> cs) << 15) | parse_crc;
-    int crc_bitcount = bitstuff(&last, 15 + 1) - 1;
+    uint32_t crc_bitcount = bitstuff(&last, 15 + 1) - 1;
 
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
-    struct can2040_msg *pm = &cd->parse_msg;
+    struct can2040_msg *pm = &cd->parse_msg, *tm = &qt->msg;
     if (cd->tx_state == TS_QUEUED) {
-        if (qt->crc == cd->parse_crc
-            && qt->msg.id == pm->id && qt->msg.dlc == pm->dlc
-            && qt->msg.data32[0] == pm->data32[0]
-            && qt->msg.data32[1] == pm->data32[1]) {
+        if (qt->crc == parse_crc && tm->id == pm->id && tm->dlc == pm->dlc
+            && tm->data32[0] == pm->data32[0]
+            && tm->data32[1] == pm->data32[1]) {
             // This is a self transmit - setup confirmation signal
             report_note_crc_start(cd, 1);
             cd->tx_state = TS_CONFIRM_TX;
