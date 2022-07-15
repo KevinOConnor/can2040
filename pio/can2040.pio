@@ -49,21 +49,21 @@ public shared_rx_read:
 public shared_rx_end:
     ;jmp shared_rx_read         ; wrap based jump
 
-// State machine "ack" code - inject properly timed ack bits if crc match
+// State machine "match" code - raise "matched" signal on a raw bitstream match
     mov y, isr                  ; cp=27
-    jmp x!=y ack_no_match       ; cp=28
-ack_signal_inject:
+    jmp x!=y match_load_next    ; cp=28
+match_signal:
     irq set 2                   ; cp=29
-public ack_no_match:
+public match_load_next:
     in osr, 11                  ; load next_counter and bits into isr
     in y, 20
     mov y, osr
-ack_check_next:
+match_check_next:
     pull noblock                ; reload target_compare into x
     mov x, osr
     jmp y-- f2                  ; setup next_counter
  f2:mov osr, y
-public ack_end:
+public match_end:
     ;jmp shared_rx_read         ; wrap based jump
 
 // State machine "tx" code - write messages to bus
@@ -131,7 +131,7 @@ public tx_conflict:
     ;jmp tx_start
     wait 1 irq 2
     // CPU then starts state machine execution
-    // CPU then loads ack fifo with CRC/position sequence to check
+    // CPU then loads match fifo with CRC/position sequence to check
 
 
 //
