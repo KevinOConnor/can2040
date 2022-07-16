@@ -772,6 +772,8 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     last = (last << 1) | 0x01;
     pio_tx_inject_ack(cd, pio_match_calc_key(last, crcend_bitpos + 1));
     pio_irq_set_maytx_ackdone(cd);
+    last = (last << 8) | 0x7f;
+    cd->tx_eof_key = pio_match_calc_key(last, crcend_bitpos + 9);
 }
 
 // Ack phase succeeded
@@ -804,7 +806,9 @@ tx_note_parse_error(struct can2040 *cd)
 static void
 tx_line_ackdone(struct can2040 *cd)
 {
-    pio_irq_set_maytx(cd);
+    report_note_ack_success(cd);
+    pio_match_check(cd, cd->tx_eof_key);
+    pio_irq_set_maytx_matched(cd);
     tx_schedule_transmit(cd);
 }
 
