@@ -222,19 +222,24 @@ pio_rx_fifo_level(struct can2040 *cd)
 
 // Set PIO "match" state machine to raise a "matched" signal on a bit sequence
 static void
-pio_match_check(struct can2040 *cd, uint32_t raw_bits, uint32_t rx_bit_pos)
+pio_match_check(struct can2040 *cd, uint32_t match_key)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    uint32_t key = (raw_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
-    pio_hw->txf[2] = key;
+    pio_hw->txf[2] = match_key;
+}
+
+// Calculate pos+bits identifier for PIO "match" state machine
+static uint32_t
+pio_match_calc_key(uint32_t raw_bits, uint32_t rx_bit_pos)
+{
+    return (raw_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
 }
 
 // Cancel any pending checks on PIO "match" state machine
 static void
 pio_match_clear(struct can2040 *cd)
 {
-    pio_hw_t *pio_hw = cd->pio_hw;
-    pio_hw->txf[2] = 0;
+    pio_match_check(cd, 0);
 }
 
 // Flush and halt PIO "tx" state machine
@@ -274,7 +279,7 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
 
 // Set PIO "tx" state machine to inject an ack after a CRC match
 static void
-pio_tx_inject_ack(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
+pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
@@ -286,7 +291,7 @@ pio_tx_inject_ack(struct can2040 *cd, uint32_t crc_bits, uint32_t rx_bit_pos)
     sm->instr = 0x20c2; // wait 1 irq, 2
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 
-    pio_match_check(cd, crc_bits, rx_bit_pos);
+    pio_match_check(cd, match_key);
 }
 
 // Check if the PIO "tx" state machine stopped due to passive/dominant conflict
@@ -739,6 +744,7 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     uint32_t crcstart_bitpos = cd->raw_bit_count - cs - 1;
     uint32_t last = ((cd->unstuf.stuffed_bits >> cs) << 15) | parse_crc;
     uint32_t crc_bitcount = bitstuff(&last, 15 + 1) - 1;
+    uint32_t crcend_bitpos = crcstart_bitpos + crc_bitcount;
 
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     struct can2040_msg *pm = &cd->parse_msg, *tm = &qt->msg;
@@ -750,7 +756,7 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
             report_note_crc_start(cd, 1);
             cd->tx_state = TS_CONFIRM_TX;
             last = (last << 10) | 0x02ff;
-            pio_match_check(cd, last, crcstart_bitpos + crc_bitcount + 10);
+            pio_match_check(cd, pio_match_calc_key(last, crcend_bitpos + 10));
             return;
         }
         if (!pio_tx_did_conflict(cd) && pio_rx_fifo_level(cd) > 1) {
@@ -764,7 +770,7 @@ tx_note_crc_start(struct can2040 *cd, uint32_t parse_crc)
     report_note_crc_start(cd, 0);
     cd->tx_state = TS_ACKING_RX;
     last = (last << 1) | 0x01;
-    pio_tx_inject_ack(cd, last, crcstart_bitpos + crc_bitcount + 1);
+    pio_tx_inject_ack(cd, pio_match_calc_key(last, crcend_bitpos + 1));
     pio_irq_set_maytx_ackdone(cd);
 }
 
