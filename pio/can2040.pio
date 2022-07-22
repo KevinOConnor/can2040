@@ -98,12 +98,12 @@ public tx_conflict:
 .program sm_rx_setup
     ;jmp shared_rx_read
 
-// Setup for "ack" state machine
-.program sm_ack_setup
+// Setup for "match" state machine
+.program sm_match_setup
     set y, 0
     mov osr, y
     mov x, !y
-    ;jmp ack_no_match
+    ;jmp match_load_next
 
 // Setup for "tx" state machine
 .program sm_tx_setup
