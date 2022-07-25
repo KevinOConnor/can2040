@@ -64,6 +64,9 @@ it if desired.)  The content of the `struct can2040` is considered
 reason.  All interaction with can2040 is done via can2040 API
 functions.
 
+The can2040 code does not dynamically allocate memory; all storage is
+contained in the `struct can2040` that the caller allocates.
+
 # can2040_msg
 
 The `can2040.h` header file provides a definition for `struct
