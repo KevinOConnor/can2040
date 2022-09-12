@@ -368,8 +368,6 @@ pio_sm_setup(struct can2040 *cd)
     pio_hw->ctrl = 0x07 << PIO_CTRL_SM_ENABLE_LSB;
 }
 
-#define PIO_FUNC 6
-
 // Initial setup of gpio pins and PIO state machines
 static void
 pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
@@ -389,8 +387,9 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
     pio_sm_setup(cd);
 
     // Map Rx/Tx gpios
-    rp2040_gpio_peripheral(cd->gpio_rx, PIO_FUNC, 1);
-    rp2040_gpio_peripheral(cd->gpio_tx, PIO_FUNC, 0);
+    uint32_t pio_func = cd->pio_num ? 7 : 6;
+    rp2040_gpio_peripheral(cd->gpio_rx, pio_func, 1);
+    rp2040_gpio_peripheral(cd->gpio_tx, pio_func, 0);
 }
 
 
