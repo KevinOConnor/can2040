@@ -461,12 +461,12 @@ unstuf_add_bits(struct can2040_bitunstuffer *bu, uint32_t data, uint32_t count)
     bu->count_stuff = count;
 }
 
-// Reset state and set the next desired 'count' unstuffed bits to extract
+// Reset state and set the next desired 'num_bits' unstuffed bits to extract
 static void
-unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t count)
+unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t num_bits)
 {
     bu->unstuffed_bits = 0;
-    bu->count_unstuff = count;
+    bu->count_unstuff = num_bits;
 }
 
 // Clear bitstuffing state (used after crc field to avoid bitstuffing ack field)
@@ -856,10 +856,10 @@ enum {
 
 // Transition to the next parsing state
 static void
-data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t bits)
+data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 {
     cd->parse_state = state;
-    unstuf_set_count(&cd->unstuf, bits);
+    unstuf_set_count(&cd->unstuf, num_bits);
 }
 
 // Transition to the MS_DISCARD state - drop all bits until 6 passive bits
@@ -885,7 +885,7 @@ data_state_line_error(struct can2040 *cd)
     data_state_go_discard(cd);
 }
 
-// Received six passive bits on the line
+// Received six unexpected passive bits on the line
 static void
 data_state_line_passive(struct can2040 *cd)
 {
