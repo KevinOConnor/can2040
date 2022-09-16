@@ -773,6 +773,15 @@ report_note_crc_start(struct can2040 *cd)
     cd->report_eof_key = pio_match_calc_key(last, crcend_bitpos + 9);
 }
 
+// Parser successfully found matching crc
+static void
+report_note_crc_success(struct can2040 *cd)
+{
+    if (cd->report_state == (RS_IN_MSG | RS_IS_TX))
+        // Enable "matched" irq for fast back-to-back transmit scheduling
+        pio_irq_set_maytx_matched(cd);
+}
+
 // Parser found successful ack
 static void
 report_note_ack_success(struct can2040 *cd)
@@ -781,9 +790,6 @@ report_note_ack_success(struct can2040 *cd)
         // Got rx "ackdone" and "matched" signals already
         return;
     cd->report_state |= RS_AWAIT_EOF;
-    if (cd->report_state & RS_IS_TX)
-        // Enable "matched" irq for fast back-to-back transmit scheduling
-        pio_irq_set_maytx_matched(cd);
 }
 
 // Parser found successful EOF
@@ -815,7 +821,6 @@ report_line_ackdone(struct can2040 *cd)
         return;
     }
     // Setup "matched" irq for fast rx callbacks
-    cd->report_state = RS_IN_MSG | RS_AWAIT_EOF;
     pio_match_check(cd, cd->report_eof_key);
     pio_irq_set_maytx_matched(cd);
     // Schedule next transmit (so it is ready for next frame line arbitration)
@@ -827,6 +832,8 @@ static void
 report_line_matched(struct can2040 *cd)
 {
     // Implement fast rx callback and/or fast back-to-back tx scheduling
+    if (cd->report_state & RS_IN_MSG)
+        cd->report_state |= RS_AWAIT_EOF;
     report_handle_eof(cd);
     pio_irq_set_none(cd);
     tx_schedule_transmit(cd);
@@ -1013,6 +1020,7 @@ data_state_update_crc(struct can2040 *cd, uint32_t data)
         return;
     }
 
+    report_note_crc_success(cd);
     unstuf_clear_state(&cd->unstuf);
     data_state_go_next(cd, MS_ACK, 2);
 }
