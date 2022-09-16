@@ -474,7 +474,7 @@ static void
 unstuf_clear_state(struct can2040_bitunstuffer *bu)
 {
     uint32_t lb = 1 << bu->count_stuff;
-    bu->stuffed_bits = (bu->stuffed_bits & (lb - 1)) | lb;
+    bu->stuffed_bits = (bu->stuffed_bits & (lb - 1)) | (lb << 1);
 }
 
 // Pull bits from unstuffer (as specified in unstuf_set_count() )
