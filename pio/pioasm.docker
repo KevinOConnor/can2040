@@ -4,7 +4,7 @@
 # Typically one would build the container with something like:
 #   docker build -t pioasm -f pio/pioasm.docker
 # And then one could assemble the can2040.pio file with something like:
-#   docker run --rm -it -v ./pio:/project localhost/pioasm /project/canbus.pio
+#   docker run --rm -it -v ./pio:/project localhost/pioasm /project/can2040.pio
 
 FROM ubuntu:20.04 as base
 
