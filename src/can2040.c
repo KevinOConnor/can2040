@@ -83,12 +83,12 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
     0x0048, //  1: jmp    x--, 8
-    0xe13a, //  2: set    x, 26                  [1]
+    0xe12a, //  2: set    x, 10                  [1]
     0x00cc, //  3: jmp    pin, 12
     0xc000, //  4: irq    nowait 0
     0x00c0, //  5: jmp    pin, 0
     0xc040, //  6: irq    clear 0
-    0xe228, //  7: set    x, 8                   [2]
+    0xe229, //  7: set    x, 9                   [2]
     0xf242, //  8: set    y, 2                   [18]
     0xc104, //  9: irq    nowait 4               [1]
     0x03c5, // 10: jmp    pin, 5                 [3]
@@ -130,7 +130,7 @@ pio_sync_setup(struct can2040 *cd)
         | cd->gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
-    pio_hw->txf[0] = PIO_CLOCK_PER_BIT / 2 * 8 - 5 - 1;
+    pio_hw->txf[0] = PIO_CLOCK_PER_BIT / 2 * 7 - 5 - 1;
     sm->instr = 0x80a0; // pull block
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }
@@ -192,7 +192,7 @@ pio_sync_normal_start_signal(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t eom_idx = can2040_offset_sync_found_end_of_message;
-    pio_hw->instr_mem[eom_idx] = 0xe13a; // set x, 26 [1]
+    pio_hw->instr_mem[eom_idx] = 0xe12a; // set x, 10 [1]
 }
 
 // Set PIO "sync" machine to signal "may transmit" (sm irq 0) on 17 idle bits
@@ -903,7 +903,8 @@ data_state_line_passive(struct can2040 *cd)
     }
 
     uint32_t stuffed_bits = cd->unstuf.stuffed_bits >> cd->unstuf.count_stuff;
-    if (stuffed_bits == 0xffffffff) {
+    uint32_t dom_bits = ~stuffed_bits;
+    if (!dom_bits) {
         // Counter overflow in "sync" state machine - reset it
         pio_sync_setup(cd);
         cd->unstuf.stuffed_bits = 0;
@@ -911,8 +912,8 @@ data_state_line_passive(struct can2040 *cd)
         return;
     }
 
-    // Look for sof after 9 passive bits (most "PIO sync" will produce)
-    if (((stuffed_bits + 1) & 0x1ff) == 0) {
+    // Look for sof after 10 passive bits (most "PIO sync" will produce)
+    if (!(dom_bits & 0x3ff)) {
         data_state_go_next(cd, MS_START, 1);
         return;
     }
@@ -1046,18 +1047,18 @@ data_state_update_eof0(struct can2040 *cd, uint32_t data)
         return;
     }
     unstuf_clear_state(&cd->unstuf);
-    data_state_go_next(cd, MS_EOF1, 4);
+    data_state_go_next(cd, MS_EOF1, 5);
 }
 
-// Handle reception of end-of-frame (EOF) bits 5-7 and first IFS bit
+// Handle reception of end-of-frame (EOF) bits 5-7 and first two IFS bits
 static void
 data_state_update_eof1(struct can2040 *cd, uint32_t data)
 {
-    if (data >= 0x0e || (data >= 0x0c && report_is_acking_rx(cd)))
+    if (data >= 0x1c || (data >= 0x18 && report_is_acking_rx(cd)))
         // Message is considered fully transmitted
         report_note_eof_success(cd);
 
-    if (data == 0x0f)
+    if (data == 0x1f)
         data_state_go_next(cd, MS_START, 1);
     else
         data_state_go_discard(cd);
