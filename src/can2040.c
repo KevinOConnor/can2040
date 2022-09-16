@@ -67,6 +67,7 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
  ****************************************************************/
 
 #define PIO_CLOCK_PER_BIT 32
+#define PIO_RX_WAKE_BITS 10
 
 #define can2040_offset_sync_found_end_of_message 2u
 #define can2040_offset_sync_signal_start 4u
@@ -147,7 +148,7 @@ pio_rx_setup(struct can2040 *cd)
     sm->pinctrl = cd->gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
     sm->shiftctrl = 0; // flush fifo on a restart
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_RX_BITS
-                     | 8 << PIO_SM0_SHIFTCTRL_PUSH_THRESH_LSB
+                     | PIO_RX_WAKE_BITS << PIO_SM0_SHIFTCTRL_PUSH_THRESH_LSB
                      | PIO_SM0_SHIFTCTRL_AUTOPUSH_BITS);
     sm->instr = can2040_offset_shared_rx_read; // jmp shared_rx_read
 }
@@ -1096,10 +1097,10 @@ data_state_update(struct can2040 *cd, uint32_t data)
 
 // Process an incoming byte of data from PIO "rx" state machine
 static void
-process_rx(struct can2040 *cd, uint32_t rx_byte)
+process_rx(struct can2040 *cd, uint32_t rx_data)
 {
-    unstuf_add_bits(&cd->unstuf, rx_byte, 8);
-    cd->raw_bit_count += 8;
+    unstuf_add_bits(&cd->unstuf, rx_data, PIO_RX_WAKE_BITS);
+    cd->raw_bit_count += PIO_RX_WAKE_BITS;
 
     // undo bit stuffing
     for (;;) {
@@ -1128,8 +1129,8 @@ can2040_pio_irq_handler(struct can2040 *cd)
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t ints = pio_hw->ints0;
     while (likely(ints & PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS)) {
-        uint8_t rx_byte = pio_hw->rxf[1];
-        process_rx(cd, rx_byte);
+        uint32_t rx_data = pio_hw->rxf[1];
+        process_rx(cd, rx_data);
         ints = pio_hw->ints0;
         if (likely(!ints))
             return;

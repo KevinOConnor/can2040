@@ -79,7 +79,7 @@ software overhead of can2040 when sharing an ARM core.
 * The ARM core processing time is dependent on the amount of bus
   traffic, even if that bus traffic is not intended for the node. It
   is expected that a fully saturated CAN bus at the fastest supported
-  rate of 1Mbit/s may use up to ~30% of one of the two rp2040 ARM
+  rate of 1Mbit/s may use up to ~25% of one of the two rp2040 ARM
   cores (when the ARM core is running at 125Mhz).  A slower CAN bus
   speed would have a lower worst case processing time (for example, a
   bus speed of 500kbit/s is expected to have half the worst case
@@ -107,7 +107,7 @@ software overhead of can2040 when sharing an ARM core.
   the node has many high-priority messages it may only get access to
   the bus on every other message.
 
-  Above ~9 bit times: The code may not have sufficient time to
+  Above ~7 bit times: The code may not have sufficient time to
   schedule an acknowledgment for a received message, and/or the code
   may not have sufficient time to schedule a high-priority
   transmission before another node starts a transmission of lower
@@ -115,7 +115,7 @@ software overhead of can2040 when sharing an ARM core.
   result in a high-priority message from the node being delayed during
   periods of high bus contention.
 
-  Above ~65 bit times: The code may not have sufficient time to read
+  Above ~81 bit times: The code may not have sufficient time to read
   all bytes before the "PIO FIFO queue" overflows.  As a result,
   received messages on the CAN bus sent to the node may be permanently
   lost and messages transmitted from the node may be transmitted
