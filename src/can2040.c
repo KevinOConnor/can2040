@@ -691,14 +691,14 @@ static void
 report_callback_error(struct can2040 *cd, uint32_t error_code)
 {
     struct can2040_msg msg = {};
-    cd->rx_cb(cd, CAN2040_NOTIFY_ERROR | error_code, &msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_ERROR | error_code, &msg, cd->rx_cb_data);
 }
 
 // Report a received message to calling code (via callback interface)
 static void
 report_callback_rx_msg(struct can2040 *cd)
 {
-    cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg, cd->rx_cb_data);
 }
 
 // Report a message that was successfully transmited (via callback interface)
@@ -706,7 +706,7 @@ static void
 report_callback_tx_msg(struct can2040 *cd)
 {
     cd->tx_pull_pos++;
-    cd->rx_cb(cd, CAN2040_NOTIFY_TX, &cd->parse_msg);
+    cd->rx_cb(cd, CAN2040_NOTIFY_TX, &cd->parse_msg, cd->rx_cb_data);
 }
 
 // EOF phase complete - report message (rx or tx) to calling code
@@ -1243,9 +1243,10 @@ can2040_setup(struct can2040 *cd, uint32_t pio_num)
 
 // API function to configure callback
 void
-can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
+can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb, void * rx_cb_context_data)
 {
     cd->rx_cb = rx_cb;
+    cd->rx_cb_data = rx_cb_context_data;
 }
 
 // API function to start CANbus interface

@@ -24,7 +24,7 @@ The following provides example startup C code for can2040:
 static struct can2040 cbus;
 
 static void
-can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
+can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg, void *ctx_data)
 {
     // Add message processing code here...
 }
@@ -44,7 +44,7 @@ canbus_setup(void)
 
     // Setup canbus
     can2040_setup(&cbus, pio_num);
-    can2040_callback_config(&cbus, can2040_cb);
+    can2040_callback_config(&cbus, can2040_cb, NULL);
 
     // Enable irqs
     irq_set_exclusive_handler(PIO0_IRQ_0_IRQn, PIOx_IRQHandler);
@@ -101,7 +101,7 @@ The `pio_num` should be either `0` or `1` to use either the `PIO0` or
 
 ## can2040_callback_config
 
-`void can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)`
+`void can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb, void * rx_cb_context_data)`
 
 This function specifies the main can2040 callback (as specified in the
 `rx_cb` parameter).
@@ -110,8 +110,13 @@ The `can2040_rx_cb` callback function will be invoked with each
 successfully received and transmitted message.  It must be provided by
 the user code.
 
+The `rx_cb_context_data` parameter allows for arbitrary data to be passed
+to the callback function whenever it is invoked. Care should be taken to make
+sure that the pointer passed here is either globally scoped or dynamically
+allocated and not freed until `cd` is destroyed.
+
 The callback uses the function prototype:
-`void can2040_rx_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)`
+`void can2040_rx_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg, void *ctx_data)`
 
 The `cd` parameter of the callback contains the same pointer passed to
 `can2040_callback_config()`.
@@ -137,6 +142,9 @@ processed during normal (non-irq) context.
 The `msg` pointer is only valid during the duration of the callback.
 The callback code should copy any desired content from `msg` to its
 own storage during the callback.
+
+The `ctx_data` parameter of the callback contains the same pointer passed as
+`rx_cb_context_data`.
 
 The callback is invoked for all valid received messages on the CAN
 bus.  The can2040 code does not implement receive message filtering.

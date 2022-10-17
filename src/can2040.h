@@ -24,7 +24,7 @@ enum {
 };
 struct can2040;
 typedef void (*can2040_rx_cb)(struct can2040 *cd, uint32_t notify
-                              , struct can2040_msg *msg);
+                              , struct can2040_msg *msg, void *ctx_data);
 
 void can2040_setup(struct can2040 *cd, uint32_t pio_num);
 void can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb);
@@ -56,6 +56,7 @@ struct can2040 {
     void *pio_hw;
     uint32_t gpio_rx, gpio_tx;
     can2040_rx_cb rx_cb;
+    void * rx_cb_data;
 
     // Bit unstuffing
     struct can2040_bitunstuffer unstuf;
