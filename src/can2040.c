@@ -117,10 +117,11 @@ static const uint16_t can2040_program_instructions[] = {
 };
 
 // Local names for PIO state machine IRQs
-#define SI_MAYTX   PIO_IRQ0_INTE_SM0_BITS
-#define SI_MATCHED PIO_IRQ0_INTE_SM2_BITS
-#define SI_ACKDONE PIO_IRQ0_INTE_SM3_BITS
-#define SI_RX_DATA PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
+#define SI_MAYTX     PIO_IRQ0_INTE_SM0_BITS
+#define SI_MATCHED   PIO_IRQ0_INTE_SM2_BITS
+#define SI_ACKDONE   PIO_IRQ0_INTE_SM3_BITS
+#define SI_RX_DATA   PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
+#define SI_TXPENDING PIO_IRQ0_INTE_SM1_BITS // Misc bit manually forced
 
 // Setup PIO "sync" state machine (state machine 0)
 static void
@@ -326,12 +327,28 @@ pio_irq_set(struct can2040 *cd, uint32_t sm_irqs)
     pio_hw->inte0 = sm_irqs | SI_RX_DATA;
 }
 
-// Atomically enable "may transmit" signal (sm irq 0)
-static void
-pio_irq_atomic_set_maytx(struct can2040 *cd)
+// Return current host irq mask
+static uint32_t
+pio_irq_get(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    hw_set_bits(&pio_hw->inte0, SI_MAYTX);
+    return pio_hw->inte0;
+}
+
+// Raise the txpending flag
+static void
+pio_signal_set_txpending(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    pio_hw->irq_force = SI_TXPENDING >> 8;
+}
+
+// Clear the txpending flag
+static void
+pio_signal_clear_txpending(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    pio_hw->irq = SI_TXPENDING >> 8;
 }
 
 // Setup PIO state machines
@@ -634,21 +651,23 @@ tx_qpos(struct can2040 *cd, uint32_t pos)
 }
 
 // Queue the next message for transmission in the PIO
-static void
+static uint32_t
 tx_schedule_transmit(struct can2040 *cd)
 {
     if (cd->tx_state == TS_QUEUED && !pio_tx_did_conflict(cd)
         && !pio_tx_did_drain(cd))
         // Already queued or actively transmitting
-        return;
+        return 0;
     if (cd->tx_push_pos == cd->tx_pull_pos) {
         // No new messages to transmit
         cd->tx_state = TS_IDLE;
-        return;
+        pio_signal_clear_txpending(cd);
+        return SI_TXPENDING;
     }
     cd->tx_state = TS_QUEUED;
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     pio_tx_send(cd, qt->stuffed_data, qt->stuffed_words);
+    return 0;
 }
 
 // Setup PIO state for ack injection
@@ -810,7 +829,7 @@ report_note_parse_error(struct can2040 *cd)
         pio_match_clear(cd);
     }
     pio_sync_slow_start_signal(cd);
-    pio_irq_set(cd, SI_MAYTX);
+    pio_irq_set(cd, SI_MAYTX | SI_TXPENDING);
 }
 
 // Received PIO rx "ackdone" irq
@@ -825,9 +844,9 @@ report_line_ackdone(struct can2040 *cd)
     // Setup "matched" irq for fast rx callbacks
     uint32_t bits = (cd->parse_crc_bits << 8) | 0x7f;
     pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 8));
-    pio_irq_set(cd, SI_MAYTX | SI_MATCHED);
     // Schedule next transmit (so it is ready for next frame line arbitration)
-    tx_schedule_transmit(cd);
+    uint32_t check_txpending = tx_schedule_transmit(cd);
+    pio_irq_set(cd, SI_MAYTX | SI_MATCHED | check_txpending);
 }
 
 // Received PIO "matched" irq
@@ -841,8 +860,8 @@ report_line_matched(struct can2040 *cd)
         report_handle_eof(cd);
     }
     // Implement fast back-to-back tx scheduling (if applicable)
-    pio_irq_set(cd, 0);
-    tx_schedule_transmit(cd);
+    uint32_t check_txpending = tx_schedule_transmit(cd);
+    pio_irq_set(cd, check_txpending);
 }
 
 // Received 10+ passive bits on the line (between 10 and 17 bits)
@@ -850,11 +869,20 @@ static void
 report_line_maytx(struct can2040 *cd)
 {
     // Line is idle - may be unexpected EOF, missed ack injection,
-    // missed "matched" signal, or can2040_transmit() kick.
+    // or missed "matched" signal.
     if (cd->report_state != RS_IDLE)
         report_handle_eof(cd);
-    pio_irq_set(cd, 0);
-    tx_schedule_transmit(cd);
+    uint32_t check_txpending = tx_schedule_transmit(cd);
+    pio_irq_set(cd, check_txpending);
+}
+
+// Schedule a transmit
+static void
+report_line_txpending(struct can2040 *cd)
+{
+    // Tx request from can2040_transmit() or report_note_parse_error().
+    uint32_t check_txpending = tx_schedule_transmit(cd);
+    pio_irq_set(cd, (pio_irq_get(cd) & ~SI_TXPENDING) | check_txpending);
 }
 
 
@@ -1164,6 +1192,9 @@ can2040_pio_irq_handler(struct can2040 *cd)
     else if (ints & SI_MAYTX)
         // Bus is idle, but not all bits may have been flushed yet
         report_line_maytx(cd);
+    else if (ints & SI_TXPENDING)
+        // Schedule a transmit
+        report_line_txpending(cd);
 }
 
 
@@ -1241,7 +1272,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     writel(&cd->tx_push_pos, tx_push_pos + 1);
 
     // Wakeup if in TS_IDLE state
-    pio_irq_atomic_set_maytx(cd);
+    pio_signal_set_txpending(cd);
 
     return 0;
 }
