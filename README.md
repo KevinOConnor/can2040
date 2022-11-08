@@ -6,7 +6,8 @@ transceiver chip.
 
 The code supports reading and writing CAN 2.0B data frames at rates up
 to 1Mbit per second.  See the [API document](docs/API.md) for
-information on using can2040.
+information on using can2040.  The [tools document](docs/Tools.md)
+contains information on developer tools that may be useful.
 
 This is a software implementation of CAN bus.  See the [features
 document](docs/Features.md) for details about the implementation.
