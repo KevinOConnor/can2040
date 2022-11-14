@@ -524,6 +524,13 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
     }
 }
 
+// Return most recent raw (still stuffed) bits
+static uint32_t
+unstuf_get_raw(struct can2040_bitunstuffer *bu)
+{
+    return bu->stuffed_bits >> bu->count_stuff;
+}
+
 
 /****************************************************************
  * Bit stuffing
@@ -746,9 +753,8 @@ report_note_message_start(struct can2040 *cd)
 static void
 report_note_crc_start(struct can2040 *cd)
 {
-    uint32_t cs = cd->unstuf.count_stuff;
-    uint32_t crcstart_bitpos = cd->raw_bit_count - cs - 1;
-    uint32_t last = ((cd->unstuf.stuffed_bits >> cs) << 15) | cd->parse_crc;
+    uint32_t crcstart_bitpos = cd->raw_bit_count - cd->unstuf.count_stuff - 1;
+    uint32_t last = (unstuf_get_raw(&cd->unstuf) << 15) | cd->parse_crc;
     uint32_t crc_bitcount = bitstuff(&last, 15 + 1) - 1;
     uint32_t crcend_bitpos = crcstart_bitpos + crc_bitcount;
 
@@ -903,7 +909,7 @@ data_state_line_passive(struct can2040 *cd)
         return;
     }
 
-    uint32_t stuffed_bits = cd->unstuf.stuffed_bits >> cd->unstuf.count_stuff;
+    uint32_t stuffed_bits = unstuf_get_raw(&cd->unstuf);
     uint32_t dom_bits = ~stuffed_bits;
     if (!dom_bits) {
         // Counter overflow in "sync" state machine - reset it
