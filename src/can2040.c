@@ -478,6 +478,14 @@ unstuf_clear_state(struct can2040_bitunstuffer *bu)
     bu->stuffed_bits = (bu->stuffed_bits & (lb - 1)) | (lb << 1);
 }
 
+// Restore raw bitstuffing state (used to undo unstuf_clear_state() )
+static void
+unstuf_restore_state(struct can2040_bitunstuffer *bu, uint32_t data)
+{
+    uint32_t cs = bu->count_stuff;
+    bu->stuffed_bits = (bu->stuffed_bits & ((1 << cs) - 1)) | (data << cs);
+}
+
 // Pull bits from unstuffer (as specified in unstuf_set_count() )
 static int
 unstuf_pull_bits(struct can2040_bitunstuffer *bu)
@@ -1039,6 +1047,10 @@ static void
 data_state_update_ack(struct can2040 *cd, uint32_t data)
 {
     if (data != 0x01) {
+        // Undo unstuf_clear_state() for correct SOF detection in
+        // data_state_line_passive()
+        unstuf_restore_state(&cd->unstuf, (cd->parse_crc_bits << 2) | data);
+
         data_state_go_discard(cd);
         return;
     }
