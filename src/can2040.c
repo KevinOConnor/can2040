@@ -309,6 +309,15 @@ pio_tx_did_conflict(struct can2040 *cd)
     return pio_hw->sm[3].addr == can2040_offset_tx_conflict;
 }
 
+// Did PIO "tx" state machine fully complete msg transmit unexpectedly?
+static int
+pio_tx_did_drain(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    return (!(pio_hw->flevel & PIO_FLEVEL_TX3_BITS)
+            && (pio_hw->intr & (SI_MAYTX | SI_RX_DATA)) == SI_MAYTX);
+}
+
 // Enable host irqs for state machine signals
 static void
 pio_irq_set(struct can2040 *cd, uint32_t sm_irqs)
@@ -628,7 +637,8 @@ tx_qpos(struct can2040 *cd, uint32_t pos)
 static void
 tx_schedule_transmit(struct can2040 *cd)
 {
-    if (cd->tx_state == TS_QUEUED && !pio_tx_did_conflict(cd))
+    if (cd->tx_state == TS_QUEUED && !pio_tx_did_conflict(cd)
+        && !pio_tx_did_drain(cd))
         // Already queued or actively transmitting
         return;
     if (cd->tx_push_pos == cd->tx_pull_pos) {
