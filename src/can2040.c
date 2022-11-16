@@ -688,7 +688,11 @@ tx_check_local_message(struct can2040 *cd)
 
 // Report state flags (stored in cd->report_state)
 enum {
-    RS_IDLE = 0, RS_IS_TX = 1, RS_IN_MSG = 2, RS_AWAIT_EOF = 4,
+    RS_NEED_EOF_FLAG = 1<<2,
+    // States
+    RS_IDLE = 0, RS_NEED_RX_ACK = 1, RS_NEED_TX_ACK = 2,
+    RS_NEED_RX_EOF = RS_NEED_RX_ACK | RS_NEED_EOF_FLAG,
+    RS_NEED_TX_EOF = RS_NEED_TX_ACK | RS_NEED_EOF_FLAG,
 };
 
 // Report error to calling code (via callback interface)
@@ -718,13 +722,10 @@ report_callback_tx_msg(struct can2040 *cd)
 static void
 report_handle_eof(struct can2040 *cd)
 {
-    if (cd->report_state == RS_IDLE)
-        // Message already reported or an unexpected EOF
-        return;
-    if (cd->report_state & RS_AWAIT_EOF) {
+    if (cd->report_state & RS_NEED_EOF_FLAG) { // RS_NEED_xX_EOF
         // Successfully processed a new message - report to calling code
         pio_sync_normal_start_signal(cd);
-        if (cd->report_state & RS_IS_TX)
+        if (cd->report_state == RS_NEED_TX_EOF)
             report_callback_tx_msg(cd);
         else
             report_callback_rx_msg(cd);
@@ -733,11 +734,11 @@ report_handle_eof(struct can2040 *cd)
     pio_match_clear(cd);
 }
 
-// Check if in an rx ack is pending
+// Check if in an rx message is being processed
 static int
-report_is_acking_rx(struct can2040 *cd)
+report_is_rx_eof_pending(struct can2040 *cd)
 {
-    return cd->report_state == (RS_IN_MSG | RS_AWAIT_EOF);
+    return cd->report_state == RS_NEED_RX_EOF;
 }
 
 // Parser found a new message start
@@ -754,14 +755,14 @@ report_note_crc_start(struct can2040 *cd)
     int ret = tx_check_local_message(cd);
     if (ret) {
         // This is a self transmit - setup tx eof "matched" signal
-        cd->report_state = RS_IN_MSG | RS_IS_TX;
+        cd->report_state = RS_NEED_TX_ACK;
         uint32_t bits = (cd->parse_crc_bits << 9) | 0x0ff;
         pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 9));
         return;
     }
 
     // Inject ack
-    cd->report_state = RS_IN_MSG;
+    cd->report_state = RS_NEED_RX_ACK;
     uint32_t key = pio_match_calc_key(cd->parse_crc_bits, cd->parse_crc_pos);
     ret = tx_inject_ack(cd, key);
     if (ret)
@@ -774,7 +775,7 @@ report_note_crc_start(struct can2040 *cd)
 static void
 report_note_crc_success(struct can2040 *cd)
 {
-    if (cd->report_state == (RS_IN_MSG | RS_IS_TX))
+    if (cd->report_state == RS_NEED_TX_ACK)
         // Enable "matched" irq for fast back-to-back transmit scheduling
         pio_irq_set(cd, SI_MAYTX | SI_MATCHED);
 }
@@ -783,16 +784,20 @@ report_note_crc_success(struct can2040 *cd)
 static void
 report_note_ack_success(struct can2040 *cd)
 {
-    if (!(cd->report_state & RS_IN_MSG))
-        // Got rx "ackdone" and "matched" signals already
+    if (cd->report_state == RS_IDLE)
+        // Got "matched" signal already
         return;
-    cd->report_state |= RS_AWAIT_EOF;
+    // Transition RS_NEED_xX_ACK to RS_NEED_xX_EOF (if not already there)
+    cd->report_state |= RS_NEED_EOF_FLAG;
 }
 
 // Parser found successful EOF
 static void
 report_note_eof_success(struct can2040 *cd)
 {
+    if (cd->report_state == RS_IDLE)
+        // Got "matched" signal already
+        return;
     report_handle_eof(cd);
 }
 
@@ -812,7 +817,7 @@ report_note_parse_error(struct can2040 *cd)
 static void
 report_line_ackdone(struct can2040 *cd)
 {
-    if (!(cd->report_state & RS_IN_MSG)) {
+    if (cd->report_state == RS_IDLE) {
         // Parser already processed ack and eof bits
         pio_irq_set(cd, SI_MAYTX);
         return;
@@ -829,10 +834,13 @@ report_line_ackdone(struct can2040 *cd)
 static void
 report_line_matched(struct can2040 *cd)
 {
-    // Implement fast rx callback and/or fast back-to-back tx scheduling
-    if (cd->report_state & RS_IN_MSG)
-        cd->report_state |= RS_AWAIT_EOF;
-    report_handle_eof(cd);
+    // A match event indicates an ack and eof are present
+    if (cd->report_state != RS_IDLE) {
+        // Transition RS_NEED_xX_ACK to RS_NEED_xX_EOF (if not already there)
+        cd->report_state |= RS_NEED_EOF_FLAG;
+        report_handle_eof(cd);
+    }
+    // Implement fast back-to-back tx scheduling (if applicable)
     pio_irq_set(cd, 0);
     tx_schedule_transmit(cd);
 }
@@ -843,7 +851,8 @@ report_line_maytx(struct can2040 *cd)
 {
     // Line is idle - may be unexpected EOF, missed ack injection,
     // missed "matched" signal, or can2040_transmit() kick.
-    report_handle_eof(cd);
+    if (cd->report_state != RS_IDLE)
+        report_handle_eof(cd);
     pio_irq_set(cd, 0);
     tx_schedule_transmit(cd);
 }
@@ -1064,7 +1073,7 @@ data_state_update_eof0(struct can2040 *cd, uint32_t data)
 static void
 data_state_update_eof1(struct can2040 *cd, uint32_t data)
 {
-    if (data >= 0x1c || (data >= 0x18 && report_is_acking_rx(cd)))
+    if (data >= 0x1c || (data >= 0x18 && report_is_rx_eof_pending(cd)))
         // Message is considered fully transmitted
         report_note_eof_success(cd);
 
