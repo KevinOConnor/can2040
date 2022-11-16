@@ -753,31 +753,23 @@ report_note_message_start(struct can2040 *cd)
 static void
 report_note_crc_start(struct can2040 *cd)
 {
-    uint32_t crcstart_bitpos = cd->raw_bit_count - cd->unstuf.count_stuff - 1;
-    uint32_t last = (unstuf_get_raw(&cd->unstuf) << 15) | cd->parse_crc;
-    uint32_t crc_bitcount = bitstuff(&last, 15 + 1) - 1;
-    uint32_t crcend_bitpos = crcstart_bitpos + crc_bitcount;
-
     int ret = tx_check_local_message(cd);
     if (ret) {
         // This is a self transmit - setup tx eof "matched" signal
         cd->report_state = RS_IN_MSG | RS_IS_TX;
-        last = (last << 10) | 0x02ff;
-        pio_match_check(cd, pio_match_calc_key(last, crcend_bitpos + 10));
+        uint32_t bits = (cd->parse_crc_bits << 9) | 0x0ff;
+        pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 9));
         return;
     }
 
     // Inject ack
     cd->report_state = RS_IN_MSG;
-    last = (last << 1) | 0x01;
-    ret = tx_inject_ack(cd, pio_match_calc_key(last, crcend_bitpos + 1));
+    uint32_t key = pio_match_calc_key(cd->parse_crc_bits, cd->parse_crc_pos);
+    ret = tx_inject_ack(cd, key);
     if (ret)
         // Ack couldn't be scheduled (due to lagged parsing state)
         return;
     pio_irq_set_maytx_ackdone(cd);
-    // Setup for future rx eof "matched" signal
-    last = (last << 8) | 0x7f;
-    cd->report_eof_key = pio_match_calc_key(last, crcend_bitpos + 9);
 }
 
 // Parser successfully found matching crc
@@ -828,7 +820,8 @@ report_line_ackdone(struct can2040 *cd)
         return;
     }
     // Setup "matched" irq for fast rx callbacks
-    pio_match_check(cd, cd->report_eof_key);
+    uint32_t bits = (cd->parse_crc_bits << 8) | 0x7f;
+    pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 8));
     pio_irq_set_maytx_matched(cd);
     // Schedule next transmit (so it is ready for next frame line arbitration)
     tx_schedule_transmit(cd);
@@ -933,6 +926,14 @@ static void
 data_state_go_crc(struct can2040 *cd)
 {
     cd->parse_crc &= 0x7fff;
+
+    // Calculate raw stuffed bits after crc and crc delimiter
+    uint32_t crcstart_bitpos = cd->raw_bit_count - cd->unstuf.count_stuff - 1;
+    uint32_t crc_bits = (unstuf_get_raw(&cd->unstuf) << 15) | cd->parse_crc;
+    uint32_t crc_bitcount = bitstuff(&crc_bits, 15 + 1) - 1;
+    cd->parse_crc_bits = (crc_bits << 1) | 0x01; // Add crc delimiter
+    cd->parse_crc_pos = crcstart_bitpos + crc_bitcount + 1;
+
     report_note_crc_start(cd);
     data_state_go_next(cd, MS_CRC, 16);
 }
