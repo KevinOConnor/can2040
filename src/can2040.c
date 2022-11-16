@@ -294,19 +294,15 @@ pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
     pio_match_check(cd, match_key);
 }
 
-// Check if the PIO "tx" state machine stopped due to passive/dominant conflict
+// Did PIO "tx" state machine unexpectedly finish a transmit attempt?
 static int
-pio_tx_did_conflict(struct can2040 *cd)
+pio_tx_did_fail(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    return pio_hw->sm[3].addr == can2040_offset_tx_conflict;
-}
-
-// Did PIO "tx" state machine fully complete msg transmit unexpectedly?
-static int
-pio_tx_did_drain(struct can2040 *cd)
-{
-    pio_hw_t *pio_hw = cd->pio_hw;
+    // Check for passive/dominant bit conflict without parser noticing
+    if (pio_hw->sm[3].addr == can2040_offset_tx_conflict)
+        return !(pio_hw->intr & SI_RX_DATA);
+    // Check for unexpected drain of transmit queue without parser noticing
     return (!(pio_hw->flevel & PIO_FLEVEL_TX3_BITS)
             && (pio_hw->intr & (SI_MAYTX | SI_RX_DATA)) == SI_MAYTX);
 }
@@ -646,8 +642,7 @@ tx_qpos(struct can2040 *cd, uint32_t pos)
 static uint32_t
 tx_schedule_transmit(struct can2040 *cd)
 {
-    if (cd->tx_state == TS_QUEUED && !pio_tx_did_conflict(cd)
-        && !pio_tx_did_drain(cd))
+    if (cd->tx_state == TS_QUEUED && !pio_tx_did_fail(cd))
         // Already queued or actively transmitting
         return 0;
     if (cd->tx_push_pos == cd->tx_pull_pos) {
