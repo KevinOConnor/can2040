@@ -220,14 +220,6 @@ pio_rx_check_stall(struct can2040 *cd)
     return pio_hw->fdebug & (1 << (PIO_FDEBUG_RXSTALL_LSB + 1));
 }
 
-// Report number of bytes still pending in PIO "rx" fifo queue
-static int
-pio_rx_fifo_level(struct can2040 *cd)
-{
-    pio_hw_t *pio_hw = cd->pio_hw;
-    return (pio_hw->flevel & PIO_FLEVEL_RX1_BITS) >> PIO_FLEVEL_RX1_LSB;
-}
-
 // Set PIO "match" state machine to raise a "matched" signal on a bit sequence
 static void
 pio_match_check(struct can2040 *cd, uint32_t match_key)
@@ -671,16 +663,11 @@ tx_schedule_transmit(struct can2040 *cd)
 }
 
 // Setup PIO state for ack injection
-static int
+static void
 tx_inject_ack(struct can2040 *cd, uint32_t match_key)
 {
-    if (cd->tx_state == TS_QUEUED && !pio_tx_did_conflict(cd)
-        && pio_rx_fifo_level(cd) > 1)
-        // Rx state is behind - acking wont succeed and may halt active tx
-        return -1;
     cd->tx_state = TS_ACKING_RX;
     pio_tx_inject_ack(cd, match_key);
-    return 0;
 }
 
 // Check if the current parsed message is feedback from current transmit
@@ -780,14 +767,10 @@ report_note_crc_start(struct can2040 *cd)
         return;
     }
 
-    // Inject ack
+    // Setup for ack inject (after rx fifos fully drained)
     cd->report_state = RS_NEED_RX_ACK;
-    uint32_t key = pio_match_calc_key(cd->parse_crc_bits, cd->parse_crc_pos);
-    ret = tx_inject_ack(cd, key);
-    if (ret)
-        // Ack couldn't be scheduled (due to lagged parsing state)
-        return;
-    pio_irq_set(cd, SI_MAYTX | SI_ACKDONE);
+    pio_signal_set_txpending(cd);
+    pio_irq_set(cd, SI_MAYTX | SI_TXPENDING);
 }
 
 // Parser successfully found matching crc
@@ -876,6 +859,13 @@ report_line_maytx(struct can2040 *cd)
 static void
 report_line_txpending(struct can2040 *cd)
 {
+    if (cd->report_state == RS_NEED_RX_ACK) {
+        // Ack inject request from report_note_crc_start()
+        uint32_t mk = pio_match_calc_key(cd->parse_crc_bits, cd->parse_crc_pos);
+        tx_inject_ack(cd, mk);
+        pio_irq_set(cd, SI_MAYTX | SI_ACKDONE);
+        return;
+    }
     // Tx request from can2040_transmit(), report_note_eof_success(),
     // or report_note_parse_error().
     uint32_t check_txpending = tx_schedule_transmit(cd);
