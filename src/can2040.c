@@ -903,7 +903,7 @@ data_state_line_error(struct can2040 *cd)
 static void
 data_state_line_passive(struct can2040 *cd)
 {
-    if (cd->parse_state != MS_DISCARD) {
+    if (cd->parse_state != MS_DISCARD && cd->parse_state != MS_START) {
         // Bitstuff error
         data_state_go_discard(cd);
         return;
@@ -913,8 +913,9 @@ data_state_line_passive(struct can2040 *cd)
     uint32_t dom_bits = ~stuffed_bits;
     if (!dom_bits) {
         // Counter overflow in "sync" state machine - reset it
-        pio_sync_setup(cd);
         cd->unstuf.stuffed_bits = 0;
+        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
+        pio_sm_setup(cd);
         data_state_go_discard(cd);
         return;
     }
