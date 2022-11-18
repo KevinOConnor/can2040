@@ -504,10 +504,10 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
             }
             bu->count_stuff = cs = cs - 1;
             if (rm_bits & (1 << (cs + 1))) {
-                // High bit of try_cnt a stuff bit
+                // High bit is a stuff bit
                 if (unlikely(rm_bits & (1 << cs))) {
                     // Six consecutive bits - a bitstuff error
-                    if ((sb >> cs) & 1)
+                    if (sb & (1 << cs))
                         return -1;
                     return -2;
                 }
