@@ -818,6 +818,7 @@ report_note_eof_success(struct can2040 *cd)
         // Got "matched" signal already
         return;
     report_handle_eof(cd);
+    pio_irq_set(cd, SI_TXPENDING);
 }
 
 // Parser found unexpected data on input
@@ -836,11 +837,6 @@ report_note_parse_error(struct can2040 *cd)
 static void
 report_line_ackdone(struct can2040 *cd)
 {
-    if (cd->report_state == RS_IDLE) {
-        // Parser already processed ack and eof bits
-        pio_irq_set(cd, SI_MAYTX);
-        return;
-    }
     // Setup "matched" irq for fast rx callbacks
     uint32_t bits = (cd->parse_crc_bits << 8) | 0x7f;
     pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 8));
@@ -880,7 +876,8 @@ report_line_maytx(struct can2040 *cd)
 static void
 report_line_txpending(struct can2040 *cd)
 {
-    // Tx request from can2040_transmit() or report_note_parse_error().
+    // Tx request from can2040_transmit(), report_note_eof_success(),
+    // or report_note_parse_error().
     uint32_t check_txpending = tx_schedule_transmit(cd);
     pio_irq_set(cd, (pio_irq_get(cd) & ~SI_TXPENDING) | check_txpending);
 }
