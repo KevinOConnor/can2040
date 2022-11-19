@@ -1113,7 +1113,7 @@ data_state_update(struct can2040 *cd, uint32_t data)
  * Input processing
  ****************************************************************/
 
-// Process an incoming byte of data from PIO "rx" state machine
+// Process incoming data from PIO "rx" state machine
 static void
 process_rx(struct can2040 *cd, uint32_t rx_data)
 {
