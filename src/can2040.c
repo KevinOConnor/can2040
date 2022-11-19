@@ -787,7 +787,7 @@ report_note_ack_success(struct can2040 *cd)
     if (cd->report_state == RS_IDLE)
         // Got "matched" signal already
         return;
-    // Transition RS_NEED_xX_ACK to RS_NEED_xX_EOF (if not already there)
+    // Transition RS_NEED_xX_ACK to RS_NEED_xX_EOF
     cd->report_state |= RS_NEED_EOF_FLAG;
 }
 
