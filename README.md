@@ -11,3 +11,7 @@ contains information on developer tools that may be useful.
 
 This is a software implementation of CAN bus.  See the [features
 document](docs/Features.md) for details about the implementation.
+
+The [code overview document](docs/Code_Overview.md) provides some
+information for developers interested in understanding the internals
+of the can2040 code.
