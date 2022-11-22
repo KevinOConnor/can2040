@@ -348,6 +348,7 @@ pio_sm_setup(struct can2040 *cd)
     pio_hw->ctrl = PIO_CTRL_SM_RESTART_BITS | PIO_CTRL_CLKDIV_RESTART_BITS;
     pio_hw->fdebug = 0xffffffff;
     pio_hw->irq = 0xff;
+    pio_signal_set_txpending(cd);
 
     // Load pio program
     int i;
