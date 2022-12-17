@@ -14,7 +14,7 @@ code.  However, a version of the PIO instructions with additional
 comments and other reference information can be found in the
 [can2040.pio](../pio/can2040.pio) file.
 
-The rp2040 chip contains two PIO hardware block and each PIO hardware
+The rp2040 chip contains two PIO hardware blocks and each PIO hardware
 block contains four PIO state machines.  The can2040 code uses one PIO
 block and uses all four state machines of that block.
 
@@ -45,7 +45,7 @@ message.  This reduces ARM core processing overhead.
 
 ## PIO "rx" state machine
 
-The main task of the PIO "sync" state machine is to relay bits on the
+The main task of the PIO "rx" state machine is to relay bits on the
 CAN bus to the ARM processing core.  The state machine reads bits from
 the "CAN rx" line after each "sample" irq and accumulates the data in
 the rx fifo.  After every 10 raw input bits the ARM core is notified
