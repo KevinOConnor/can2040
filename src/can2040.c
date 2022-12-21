@@ -267,7 +267,7 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xa242; // nop [2]
-    int i;
+    uint32_t i;
     for (i=0; i<count; i++)
         pio_hw->txf[3] = data[i];
     struct pio_sm_hw *sm = &pio_hw->sm[3];
@@ -351,7 +351,7 @@ pio_sm_setup(struct can2040 *cd)
     pio_signal_set_txpending(cd);
 
     // Load pio program
-    int i;
+    uint32_t i;
     for (i=0; i<ARRAY_SIZE(can2040_program_instructions); i++)
         pio_hw->instr_mem[i] = can2040_program_instructions[i];
 
@@ -1241,7 +1241,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
         crc = crc_bytes(crc, hdr, 3);
         bs_push(&bs, hdr, 19);
     }
-    int i;
+    uint32_t i;
     for (i=0; i<data_len; i++) {
         uint32_t v = qt->msg.data[i];
         crc = crc_byte(crc, v);
