@@ -436,9 +436,9 @@ static inline uint32_t
 crc_bytes(uint32_t crc, uint32_t data, uint32_t num)
 {
     switch (num) {
-    default: crc = crc_byte(crc, data >> 24);
-    case 3:  crc = crc_byte(crc, data >> 16);
-    case 2:  crc = crc_byte(crc, data >> 8);
+    default: crc = crc_byte(crc, data >> 24); /* FALLTHRU */
+    case 3:  crc = crc_byte(crc, data >> 16); /* FALLTHRU */
+    case 2:  crc = crc_byte(crc, data >> 8);  /* FALLTHRU */
     case 1:  crc = crc_byte(crc, data);
     }
     return crc;
