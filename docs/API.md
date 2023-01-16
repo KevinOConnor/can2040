@@ -209,6 +209,9 @@ recommended.  The `can2040_transmit()` function has processing
 overhead (it performs CRC calculation and bitstuffing on the message)
 and calling it from IRQ context may increase irq latency.
 
+It is valid to invoke `can2040_transmit()` on one ARM core while the
+other ARM core may be running `can2040_pio_irq_handler()`.
+
 ## can2040_check_transmit
 
 `int can2040_check_transmit(struct can2040 *cd)`
@@ -219,6 +222,9 @@ determine if a call to `can2040_transmit()` will succeed.
 
 It is valid to invoke `can2040_check_transmit()` from the user
 supplied `can2040_rx_cb` callback function.
+
+It is valid to invoke `can2040_check_transmit()` on one ARM core while
+the other ARM core may be running `can2040_pio_irq_handler()`.
 
 # Not reentrant safe
 
