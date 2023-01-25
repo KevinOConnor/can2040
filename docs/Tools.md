@@ -1,6 +1,6 @@
-This document describes some available tools that use the can2040
-code. These tools may facilitate development and may be useful as
-coding examples.
+This document describes some available tools that may be useful for
+testing and debugging the can2040 code.  These tools may also
+facilitate development and may be useful as coding examples.
 
 # Klipper
 
@@ -40,3 +40,36 @@ CAN bus enabled chip with its own transceiver, and all chips much be
 configured with the same CAN bus frequency.  If any of the above
 hardware is missing or not properly connected/configured then the bus
 will not function correctly; not even for debugging purposes.
+
+# Sigrok logic analyzer
+
+The [Sigrok Pulseview](https://sigrok.org/wiki/PulseView) software
+along with a low-cost logic analyzer can be useful for diagnosing CAN
+bus signaling.
+
+One can often find "USB logic analyzers" for under $15 (US pricing as
+of 2023).  These devices are often listed as "Saleae logic clones" or
+as "24MHz 8 channel USB logic analyzers".
+
+![pulseview-canbus](img/pulseview-canbus.png)
+
+The above picture was taken while using pulseview with a "Saleae
+clone" logic analyzer.  The Sigrok and pulseview software was
+installed on a desktop machine (also install the "fx2lafw" firmware if
+that is packaged separately).  The CH0 pin on the logic analyzer was
+routed to the rp2040 CAN Rx line, the CH1 pin was wired to the CAN Tx
+pin, and GND was wired to GND.  Pulseview was configured to only
+display the D0 and D1 lines (red "probe" icon center top toolbar).
+The number of samples was set to 5 million (top toolbar) and the
+sample rate was set to 24Mhz (top toolbar).  The CAN decoder was added
+(yellow and green "bubble icon" right top toolbar).  The D0 channel
+was labeled as RX and set to trigger on a falling edge (click on black
+D0 label at left).  The D1 channel was labeled as TX (click on brown
+D1 label at left).  The CAN decoder was configured for 1Mbit rate
+(click on green CAN label at left).  The CAN decoder was moved to the
+top of the display (click and drag green CAN label).  Finally, the
+capture was started (click "Run" at top left) and a packet was
+transmitted on the CAN bus (`cansend can0 123#121212121212`).
+
+The logic analyzer can provide an independent tool for capturing
+packets and verifying bit timing.
