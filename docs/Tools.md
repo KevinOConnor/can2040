@@ -12,17 +12,37 @@ mode](https://www.klipper3d.org/CANBUS.html#usb-to-can-bus-bridge-mode)
 so that an rp2040 device appears as a standard Linux USB to CAN bus
 adapter (using the "gs_usb" Linux driver).  Compiling the Klipper
 micro-controller code in this mode may be useful for CAN bus
-diagnostics even when not using Klipper.
+diagnostics even when not using Klipper.  See the [Klipper
+installation](https://www.klipper3d.org/Installation.html)
+instructions for the full installation instructions.  Briefly, on a
+Raspberry Pi computer the installation involves:
+1. Download the Klipper code
+   (`git clone https://github.com/Klipper3d/klipper`).
+2. Install compiler tools
+   (`sudo apt-get update && sudo apt-get install build-essential libncurses-dev libusb-dev libnewlib-arm-none-eabi gcc-arm-none-eabi binutils-arm-none-eabi libusb-1.0 pkg-config`).
+3. Configure the micro-controller software (`make menuconfig`).
+   Select "Enable extra low-level configuration options", select
+   "Raspberry Pi RP2040" as the micro-controller, select "No
+   bootloader", select "USB to CAN bus bridge", set the appropriate
+   gpio pins for CAN RX and CAN TX, and set the desired CAN bus
+   frequency.
+4. Build the micro-controller software (`make`).
+5. Place the rp2040 micro-controller in bootloader mode and flash the
+   software (`make flash FLASH_DEVICE=2e8a:0003`).
 
-In particular, the Linux
-[can-utils](https://github.com/linux-can/can-utils) package (eg, `sudo
-apt-get install can-utils`) can then be used to send and receive
-packets via can2040 running on an rp2040.  Once the CAN bus interface
-has been configured in Linux (eg, `sudo ip link set can0 up type can
-bitrate 1000000`) then the `candump` tool (eg, `candump -t z -Ddex
-can0,#FFFFFFFF`) may be used to report activity on the CAN bus and the
-`cansend` tool (eg, `cansend can0 123#121212121212`) may be used to
-send messages on the CAN bus.
+Once the Klipper micro-controller code is running on the rp2040 it is
+possible to use the Linux
+[can-utils](https://github.com/linux-can/can-utils) tools.  Briefly:
+1. Install the can-utils package
+   (`sudo apt-get update && sudo apt-get install can-utils`).
+2. Bring up the "can0" Linux interface
+   (eg, `sudo ip link set can0 up type can bitrate 1000000`).  Note
+   that Klipper currently uses the CAN bus frequency set during "make
+   menuconfig" and the value set in Linux is ignored.
+3. In one window run the candump utility to show all packets read by
+   the interface (eg, `candump -t z -Ddex can0,#FFFFFFFF`).
+4. In another window, send packets on the CAN bus
+   (eg, `cansend can0 123#121212121212`).
 
 # CanBoot
 
