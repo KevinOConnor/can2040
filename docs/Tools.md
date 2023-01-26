@@ -50,7 +50,7 @@ The [CanBoot](https://github.com/Arksine/CanBoot) code implements a
 cross-platform bootloader that supports flashing an rp2040
 micro-controller over CAN bus.  It utilizes can2040 on rp2040 chips.
 
-# Testing environment
+# Testing CAN bus
 
 Note that can2040 (and CAN bus in general) requires a functional
 hardware bus for proper message generation.  At a minimum, can2040
@@ -60,6 +60,18 @@ CAN bus enabled chip with its own transceiver, and all chips much be
 configured with the same CAN bus frequency.  If any of the above
 hardware is missing or not properly connected/configured then the bus
 will not function correctly; not even for debugging purposes.
+
+# Testing with Raspberry Pi Pico board
+
+It is possible to use a Raspberry Pi Pico board with a CAN bus
+transceiver board for testing.  The following picture shows an example
+wiring with a "Waveshare SN65HVD230 CAN Board":
+
+![pico-wiring](img/pico-wiring.jpg)
+
+In the above picture, 3.3V on the transceiver board is wired to 3.3V
+on the Pico, GND is wired to GND, CAN Rx is wired to GPIO4, and CAN Tx
+is wired to GPIO5.
 
 # Sigrok logic analyzer
 
