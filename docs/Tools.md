@@ -71,7 +71,9 @@ wiring with a "Waveshare SN65HVD230 CAN Board":
 
 In the above picture, 3.3V on the transceiver board is wired to 3.3V
 on the Pico, GND is wired to GND, CAN Rx is wired to GPIO4, and CAN Tx
-is wired to GPIO5.
+is wired to GPIO5.  (Note that the "Waveshare SN65HVD230 CAN Board"
+has a builtin 120 Ohm resistor between the CANH and CANL wires which
+is not easy to remove.)
 
 # Sigrok logic analyzer
 
