@@ -678,8 +678,11 @@ tx_check_local_message(struct can2040 *cd)
         return 0;
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, cd->tx_pull_pos)];
     struct can2040_msg *pm = &cd->parse_msg, *tm = &qt->msg;
-    if (qt->crc == cd->parse_crc && tm->id == pm->id && tm->dlc == pm->dlc
-        && tm->data32[0] == pm->data32[0] && tm->data32[1] == pm->data32[1]) {
+    if (tm->id == pm->id) {
+        if (qt->crc != cd->parse_crc || tm->dlc != pm->dlc
+            || tm->data32[0] != pm->data32[0] || tm->data32[1] != pm->data32[1])
+            // Message with same id that differs in content - an error
+            return -1;
         // This is a self transmit
         cd->tx_state = TS_CONFIRM_TX;
         return 1;
@@ -755,22 +758,25 @@ report_note_message_start(struct can2040 *cd)
 }
 
 // Setup for ack injection (if receiving) or ack confirmation (if transmit)
-static void
+static int
 report_note_crc_start(struct can2040 *cd)
 {
     int ret = tx_check_local_message(cd);
     if (ret) {
+        if (ret < 0)
+            return -1;
         // This is a self transmit - setup tx eof "matched" signal
         cd->report_state = RS_NEED_TX_ACK;
         uint32_t bits = (cd->parse_crc_bits << 9) | 0x0ff;
         pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 9));
-        return;
+        return 0;
     }
 
     // Setup for ack inject (after rx fifos fully drained)
     cd->report_state = RS_NEED_RX_ACK;
     pio_signal_set_txpending(cd);
     pio_irq_set(cd, SI_MAYTX | SI_TXPENDING);
+    return 0;
 }
 
 // Parser successfully found matching crc
@@ -959,7 +965,11 @@ data_state_go_crc(struct can2040 *cd)
     cd->parse_crc_bits = (crc_bits << 1) | 0x01; // Add crc delimiter
     cd->parse_crc_pos = crcstart_bitpos + crc_bitcount + 1;
 
-    report_note_crc_start(cd);
+    int ret = report_note_crc_start(cd);
+    if (ret) {
+        data_state_go_discard(cd);
+        return;
+    }
     data_state_go_next(cd, MS_CRC, 16);
 }
 
