@@ -71,9 +71,8 @@ public tx_got_recessive:
     nop                    [2]  ; cp=27
 public tx_start:
     out x, 1                    ; cp=30
-    mov pins, x                 ; cp=31
-    wait 1 irq 4
-    jmp pin tx_got_recessive    ; cp=26
+    mov pins, x            [20] ; cp=31
+    jmp pin tx_got_recessive [6]; cp=20
     jmp !x tx_start        [2]  ; cp=27
 public tx_conflict:
     jmp tx_conflict

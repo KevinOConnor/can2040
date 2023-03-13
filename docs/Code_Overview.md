@@ -26,8 +26,8 @@ bus nodes that have a slightly different clock rate.  That is, the
 sampling time for each transmitted bit is adjusted to account for a
 slightly faster or slower bitrate of the transmitter.  The PIO "sync"
 state machine raises a "sample" irq (pio irq 4) at each sampling point
-and the other state machines only read the "CAN rx" line after
-receiving that signal.
+and other state machines read the "CAN rx" line after receiving that
+signal.
 
 A secondary task of the PIO "sync" state machine is to detect when a
 new transmission may start.  It will raise a "maytx" irq (pio irq 0)
@@ -76,9 +76,9 @@ used.
 
 The main task of the PIO "tx" state machine is to transmit messages on
 the "CAN tx" line.  For each bit to be transmitted, the state machine
-sets the tx line, reads the "CAN rx" line (after a "sample" irq), and
-will stop a transmission if a dominant/passive bit conflict is found.
-This enables transmissions to properly participate in CAN bus line
+sets the tx line, reads the "CAN rx" line, and will stop a
+transmission if a dominant/passive bit conflict is found.  This
+enables transmissions to properly participate in CAN bus line
 arbitration.  To transmit a message, the ARM core fills the tx fifo
 with the raw bits of the message and arranges for the "tx" state
 machine to start after a "maytx" irq.

@@ -79,7 +79,7 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 #define can2040_offset_match_end 25u
 #define can2040_offset_tx_got_recessive 25u
 #define can2040_offset_tx_start 26u
-#define can2040_offset_tx_conflict 31u
+#define can2040_offset_tx_conflict 30u
 
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
@@ -109,11 +109,10 @@ static const uint16_t can2040_program_instructions[] = {
     0xa0e2, // 24: mov    osr, y
     0xa242, // 25: nop                           [2]
     0x6021, // 26: out    x, 1
-    0xa001, // 27: mov    pins, x
-    0x20c4, // 28: wait   1 irq, 4
-    0x00d9, // 29: jmp    pin, 25
-    0x023a, // 30: jmp    !x, 26                 [2]
-    0x001f, // 31: jmp    31
+    0xb401, // 27: mov    pins, x                [20]
+    0x06d9, // 28: jmp    pin, 25                [6]
+    0x023a, // 29: jmp    !x, 26                 [2]
+    0x001e, // 30: jmp    30
 };
 
 // Local names for PIO state machine IRQs
