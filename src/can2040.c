@@ -856,7 +856,9 @@ report_line_maytx(struct can2040 *cd)
 static void
 report_line_txpending(struct can2040 *cd)
 {
-    if (cd->report_state == RS_NEED_RX_ACK) {
+    uint32_t pio_irqs = pio_irq_get(cd);
+    if (pio_irqs == (SI_MAYTX | SI_TXPENDING | SI_RX_DATA)
+        && cd->report_state == RS_NEED_RX_ACK) {
         // Ack inject request from report_note_crc_start()
         uint32_t mk = pio_match_calc_key(cd->parse_crc_bits, cd->parse_crc_pos);
         tx_inject_ack(cd, mk);
@@ -866,7 +868,7 @@ report_line_txpending(struct can2040 *cd)
     // Tx request from can2040_transmit(), report_note_eof_success(),
     // or report_note_parse_error().
     uint32_t check_txpending = tx_schedule_transmit(cd);
-    pio_irq_set(cd, (pio_irq_get(cd) & ~SI_TXPENDING) | check_txpending);
+    pio_irq_set(cd, (pio_irqs & ~SI_TXPENDING) | check_txpending);
 }
 
 
