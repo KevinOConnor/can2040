@@ -14,6 +14,12 @@ Available on 20221121. Major features in this release:
 
 The v1.4.0 release was retroactively tagged on 20230313.
 
+## v1.4.1
+
+Available on 20230314.  This is a bug fix only release:
+* Fixed error that could cause a "duplicate ack" to be generated in
+  rare situations.
+
 # v1.3.0
 
 Available on 20220725. Major features in this release:
