@@ -84,13 +84,13 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
     0x0048, //  1: jmp    x--, 8
-    0xe12a, //  2: set    x, 10                  [1]
+    0xe129, //  2: set    x, 9                   [1]
     0x00cc, //  3: jmp    pin, 12
     0xc000, //  4: irq    nowait 0
     0x00c0, //  5: jmp    pin, 0
     0xc040, //  6: irq    clear 0
-    0xe229, //  7: set    x, 9                   [2]
-    0xf242, //  8: set    y, 2                   [18]
+    0xe429, //  7: set    x, 9                   [4]
+    0xf043, //  8: set    y, 3                   [16]
     0xc104, //  9: irq    nowait 4               [1]
     0x03c5, // 10: jmp    pin, 5                 [3]
     0x0307, // 11: jmp    7                      [3]
@@ -137,7 +137,7 @@ pio_sync_setup(struct can2040 *cd)
         | cd->gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
-    pio_hw->txf[0] = PIO_CLOCK_PER_BIT / 2 * 7 - 5 - 1;
+    pio_hw->txf[0] = 8 + 6 * PIO_CLOCK_PER_BIT / 2;
     sm->instr = 0x80a0; // pull block
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }

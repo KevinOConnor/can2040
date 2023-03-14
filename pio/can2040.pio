@@ -18,22 +18,22 @@
 
 // State machine "sync" code - clock and start/end of message signaling
 sync_recessive_edge:
-    jmp y--, sync_scan_edge     ; cp=31,33,35
-    jmp x--, sync_signal_sample ; cp=4
+    jmp y--, sync_scan_edge     ; cp=31,33,35,37
+    jmp x--, sync_signal_sample ; cp=6
 public sync_found_end_of_message:
-    set x, 10              [1]  ; cp=5
+    set x, 8               [1]  ; cp=7
 sync_loop_end_of_message:
     jmp pin sync_check_idle
 public sync_signal_start:
     irq set 0
 sync_scan_edge:
-    jmp pin sync_recessive_edge ; cp=30,32,34
+    jmp pin sync_recessive_edge ; cp=30,32,34,36
 public sync_entry:
     irq clear 0                 ; cp=1
 sync_got_dominant:
-    set x, 9               [2]  ; cp=2
+    set x, 9               [4]  ; cp=2
 sync_signal_sample:
-    set y, 2               [18] ; cp=5
+    set y, 3               [16] ; cp=7
     irq set 4              [1]  ; cp=24
     jmp pin sync_scan_edge [3]  ; cp=26
     jmp sync_got_dominant  [3]  ; cp=30
@@ -85,7 +85,7 @@ public tx_conflict:
 // Setup for "sync" state machine
 .program sm_sync_setup
     set pindirs, 0
-    // CPU pushes 106 into tx fifo - to set OSR for alternative slow start mode
+    // CPU pushes 104 into tx fifo - to set OSR for alternative slow start mode
     pull
     ;jmp sync_got_dominant
 
@@ -149,7 +149,7 @@ sync_signal_sample:
     jmp sync_got_dominant
 
 sync_scan_edge:
-    set y, 2
+    set y, 3
 sync_loop_scan_edge:
     jmp pin sync_recessive_edge
     jmp sync_got_dominant
@@ -159,7 +159,7 @@ sync_recessive_edge:
     jmp sync_found_end_of_message
 
 sync_found_end_of_message:
-    set x, 10
+    set x, 8
 sync_loop_end_of_message:
     jmp pin sync_check_idle
     jmp sync_signal_start
