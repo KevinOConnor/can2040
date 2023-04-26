@@ -76,7 +76,7 @@ public tx_start:
     jmp pin tx_got_recessive    ; cp=26
     jmp !x tx_start        [2]  ; cp=27
 public tx_conflict:
-    irq wait 7
+    jmp tx_conflict
 
 
 //
