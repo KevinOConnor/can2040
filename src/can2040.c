@@ -76,15 +76,15 @@ rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 #define can2040_offset_shared_rx_read 13u
 #define can2040_offset_shared_rx_end 15u
 #define can2040_offset_match_load_next 18u
+#define can2040_offset_tx_conflict 24u
 #define can2040_offset_match_end 25u
 #define can2040_offset_tx_got_recessive 25u
-#define can2040_offset_tx_start 26u
-#define can2040_offset_tx_conflict 30u
+#define can2040_offset_tx_write_pin 27u
 
 static const uint16_t can2040_program_instructions[] = {
     0x0085, //  0: jmp    y--, 5
     0x0048, //  1: jmp    x--, 8
-    0xe129, //  2: set    x, 9                   [1]
+    0xe029, //  2: set    x, 9
     0x00cc, //  3: jmp    pin, 12
     0xc000, //  4: irq    nowait 0
     0x00c0, //  5: jmp    pin, 0
@@ -98,7 +98,7 @@ static const uint16_t can2040_program_instructions[] = {
     0x20c4, // 13: wait   1 irq, 4
     0x4001, // 14: in     pins, 1
     0xa046, // 15: mov    y, isr
-    0x00b2, // 16: jmp    x != y, 18
+    0x01b2, // 16: jmp    x != y, 18             [1]
     0xc002, // 17: irq    nowait 2
     0x40eb, // 18: in     osr, 11
     0x4054, // 19: in     y, 20
@@ -107,12 +107,13 @@ static const uint16_t can2040_program_instructions[] = {
     0xa027, // 22: mov    x, osr
     0x0098, // 23: jmp    y--, 24
     0xa0e2, // 24: mov    osr, y
-    0xa242, // 25: nop                           [2]
-    0x6021, // 26: out    x, 1
-    0xb401, // 27: mov    pins, x                [20]
-    0x06d9, // 28: jmp    pin, 25                [6]
-    0x023a, // 29: jmp    !x, 26                 [2]
-    0x001e, // 30: jmp    30
+    0x6021, // 25: out    x, 1
+    0x00df, // 26: jmp    pin, 31
+    0xb801, // 27: mov    pins, x                [24]
+    0x02d9, // 28: jmp    pin, 25                [2]
+    0x0058, // 29: jmp    x--, 24
+    0x6021, // 30: out    x, 1
+    0x011b, // 31: jmp    27                     [1]
 };
 
 // Local names for PIO state machine IRQs
@@ -137,7 +138,7 @@ pio_sync_setup(struct can2040 *cd)
         | cd->gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
-    pio_hw->txf[0] = 8 + 6 * PIO_CLOCK_PER_BIT / 2;
+    pio_hw->txf[0] = 9 + 6 * PIO_CLOCK_PER_BIT / 2;
     sm->instr = 0x80a0; // pull block
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }
@@ -182,7 +183,10 @@ pio_tx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     struct pio_sm_hw *sm = &pio_hw->sm[3];
-    sm->execctrl = cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB;
+    sm->execctrl = (
+        cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
+        | can2040_offset_tx_conflict << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
+        | can2040_offset_tx_conflict << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
     sm->pinctrl = (1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
@@ -263,13 +267,14 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
-    pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xa242; // nop [2]
+    pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0x6021; // out x, 1
     uint32_t i;
     for (i=0; i<count; i++)
         pio_hw->txf[3] = data[i];
     struct pio_sm_hw *sm = &pio_hw->sm[3];
     sm->instr = 0xe001; // set pins, 1
-    sm->instr = can2040_offset_tx_start; // jmp tx_start
+    sm->instr = 0x6021; // out x, 1
+    sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
     sm->instr = 0x20c0; // wait 1 irq, 0
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 }
@@ -284,7 +289,8 @@ pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
     pio_hw->txf[3] = 0x7fffffff;
     struct pio_sm_hw *sm = &pio_hw->sm[3];
     sm->instr = 0xe001; // set pins, 1
-    sm->instr = can2040_offset_tx_start; // jmp tx_start
+    sm->instr = 0x6021; // out x, 1
+    sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
     sm->instr = 0x20c2; // wait 1 irq, 2
     pio_hw->ctrl = 0x0f << PIO_CTRL_SM_ENABLE_LSB;
 

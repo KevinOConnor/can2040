@@ -81,7 +81,10 @@ transmission if a dominant/passive bit conflict is found.  This
 enables transmissions to properly participate in CAN bus line
 arbitration.  To transmit a message, the ARM core fills the tx fifo
 with the raw bits of the message and arranges for the "tx" state
-machine to start after a "maytx" irq.
+machine to start after a "maytx" irq.  The "tx" state machine performs
+its own bit time synchronization to resynchronize bit timing to other
+simultaneous transmitters that may be transmitting at a slightly
+faster bit rate.
 
 A secondary task of the PIO "tx" state machine is to inject an ack bit
 to acknowledge messages received from other CAN bus nodes.  To perform

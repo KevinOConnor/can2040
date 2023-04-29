@@ -21,7 +21,7 @@ sync_recessive_edge:
     jmp y--, sync_scan_edge     ; cp=31,33,35,37
     jmp x--, sync_signal_sample ; cp=6
 public sync_found_end_of_message:
-    set x, 8               [1]  ; cp=7
+    set x, 9                    ; cp=7
 sync_loop_end_of_message:
     jmp pin sync_check_idle
 public sync_signal_start:
@@ -51,9 +51,9 @@ public shared_rx_end:
 
 // State machine "match" code - raise "matched" signal on a raw bitstream match
     mov y, isr                  ; cp=27
-    jmp x!=y match_load_next    ; cp=28
+    jmp x!=y match_load_next [1]; cp=28
 match_signal:
-    irq set 2                   ; cp=29
+    irq set 2                   ; cp=30
 public match_load_next:
     in osr, 11                  ; load next_counter and bits into isr
     in y, 20
@@ -62,20 +62,22 @@ match_check_next:
     pull noblock                ; reload target_compare into x
     mov x, osr
     jmp y-- f2                  ; setup next_counter
+public tx_conflict:
  f2:mov osr, y
 public match_end:
     ;jmp shared_rx_read         ; wrap based jump
 
 // State machine "tx" code - write messages to bus
 public tx_got_recessive:
-    nop                    [2]  ; cp=27
-public tx_start:
-    out x, 1                    ; cp=30
-    mov pins, x            [20] ; cp=31
-    jmp pin tx_got_recessive [6]; cp=20
-    jmp !x tx_start        [2]  ; cp=27
-public tx_conflict:
-    jmp tx_conflict
+    out x, 1                    ; cp=27
+    jmp pin tx_align            ; cp=28
+public tx_write_pin:
+    mov pins, x            [24] ; cp=31
+    jmp pin tx_got_recessive [2]; cp=24
+    jmp x-- tx_conflict         ; cp=27 On conflict, spin forever on dummy insn
+    out x, 1                    ; cp=28
+tx_align:
+    jmp tx_write_pin       [1]  ; cp=29
 
 
 //
@@ -85,7 +87,7 @@ public tx_conflict:
 // Setup for "sync" state machine
 .program sm_sync_setup
     set pindirs, 0
-    // CPU pushes 104 into tx fifo - to set OSR for alternative slow start mode
+    // CPU pushes 105 into tx fifo - to set OSR for alternative slow start mode
     pull
     ;jmp sync_got_dominant
 
@@ -115,7 +117,8 @@ public tx_conflict:
     // CPU clears irq 2 and irq 3
     // CPU then loads tx fifos with full (bitstuffed) message
     set pins, 1
-    ;jmp tx_start
+    out x, 1
+    ;jmp tx_write_pin
     wait 1 irq 0
     // CPU then starts state machine execution
 
@@ -123,11 +126,12 @@ public tx_conflict:
 .program sm_tx_ack
     // CPU first disables state machine execution
     // CPU clears irq 2 and irq 3
-    // CPU changes instruction at tx_loop from "nop" to:
+    // CPU changes instruction at tx_loop from "out x, 1" to:
     irq wait 3
     // CPU then loads tx fifo with ack (single off bit)
     set pins, 1
-    ;jmp tx_start
+    out x, 1
+    ;jmp tx_write_pin
     wait 1 irq 2
     // CPU then starts state machine execution
     // CPU then loads match fifo with CRC/position sequence to check
