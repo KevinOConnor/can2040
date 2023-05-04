@@ -252,3 +252,16 @@ That is, one must ensure each instance is not reentrant with respect
 to itself, but it is not required to synchronize between instances.
 One may run both can2040 instances on the same ARM core or different
 ARM cores.
+
+# Using can2040 from C++
+
+The can2040 code is intended to be compiled with gcc.  If can2040.c is
+compiled with a C compiler and linked with a C++ application then be
+careful to always import the `can2040.h` header file into C++ code in
+"C" mode - for example:
+
+```c
+extern "C" {
+  #include "can2040.h"
+}
+```
