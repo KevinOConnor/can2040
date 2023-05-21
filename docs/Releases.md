@@ -1,5 +1,18 @@
 History of can2040 releases.
 
+# v1.5.0
+
+Available on 20230520. Major features in this release:
+* Message transmit bit timing will now only synchronize to faster
+  transmitters (as is recommended by the CAN bus specification). This
+  avoids poor transmit timing due to delays between CAN Tx and CAN Rx
+  signals.
+* Improved multi-core support in `can2040_transmit()`. This function
+  can now be called on one core while the other core may be running
+  `can2040_pio_irq_handler()`.
+* Fixed a possible "transmit hang" that could occur if a transmit
+  fails due to reception of an error frame.
+
 # v1.4.0
 
 Available on 20221121. Major features in this release:
