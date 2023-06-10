@@ -226,6 +226,26 @@ supplied `can2040_rx_cb` callback function.
 It is valid to invoke `can2040_check_transmit()` on one ARM core while
 the other ARM core may be running `can2040_pio_irq_handler()`.
 
+## can2040_stop
+
+`void can2040_stop(struct can2040 *cd)`
+
+This function disables processing of can2040 CAN bus messages.  Upon
+completion of this function the user supplied `can2040_rx_cb()`
+callback function will no longer be invoked.
+
+If this function is called while a message is queued for transmit then
+it is possible that the message may be successfully transmitted
+without it being removed from the local transmit queue and without a
+`CAN2040_NOTIFY_TX` event sent to the user supplied `can2040_rx_cb()`
+callback function,
+
+The can2040 CAN bus processing may be restarted by calling
+`can2040_start()`.
+
+To clear the transmit queue before restarting, call `can2040_setup()`,
+`can2040_callback_config()`, and then `can2040_start()`.
+
 # Not reentrant safe
 
 Unless explicitly stated otherwise, the can2040 code is not reentrant

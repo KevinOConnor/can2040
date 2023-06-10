@@ -318,6 +318,14 @@ pio_irq_set(struct can2040 *cd, uint32_t sm_irqs)
     pio_hw->inte0 = sm_irqs | SI_RX_DATA;
 }
 
+// Completely disable host irqs
+static void
+pio_irq_disable(struct can2040 *cd)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    pio_hw->inte0 = 0;
+}
+
 // Return current host irq mask
 static uint32_t
 pio_irq_get(struct can2040 *cd)
@@ -896,6 +904,13 @@ enum {
     MS_CRC, MS_ACK, MS_EOF0, MS_EOF1, MS_DISCARD
 };
 
+// Reset any bits in the incoming parsing state
+static void
+data_state_clear_bits(struct can2040 *cd)
+{
+    cd->raw_bit_count = cd->unstuf.stuffed_bits = cd->unstuf.count_stuff = 0;
+}
+
 // Transition to the next parsing state
 static void
 data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
@@ -912,7 +927,7 @@ data_state_go_discard(struct can2040 *cd)
 
     if (pio_rx_check_stall(cd)) {
         // CPU couldn't keep up for some read data - must reset pio state
-        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
+        data_state_clear_bits(cd);
         pio_sm_setup(cd);
         report_callback_error(cd, 0);
     }
@@ -941,8 +956,7 @@ data_state_line_passive(struct can2040 *cd)
     uint32_t dom_bits = ~stuffed_bits;
     if (!dom_bits) {
         // Counter overflow in "sync" state machine - reset it
-        cd->unstuf.stuffed_bits = 0;
-        cd->raw_bit_count = cd->unstuf.count_stuff = 0;
+        data_state_clear_bits(cd);
         pio_sm_setup(cd);
         data_state_go_discard(cd);
         return;
@@ -1310,13 +1324,15 @@ can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
 {
     cd->gpio_rx = gpio_rx;
     cd->gpio_tx = gpio_tx;
+    data_state_clear_bits(cd);
     pio_setup(cd, sys_clock, bitrate);
     data_state_go_discard(cd);
 }
 
-// API function to stop and uninitialize can2040 code
+// API function to stop can2040 code
 void
-can2040_shutdown(struct can2040 *cd)
+can2040_stop(struct can2040 *cd)
 {
-    // XXX
+    pio_irq_disable(cd);
+    pio_sm_setup(cd);
 }
