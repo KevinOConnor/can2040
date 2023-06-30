@@ -123,6 +123,9 @@ static const uint16_t can2040_program_instructions[] = {
 #define SI_RX_DATA   PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
 #define SI_TXPENDING PIO_IRQ0_INTE_SM1_BITS // Misc bit manually forced
 
+static void
+report_callback_error(struct can2040 *cd, uint32_t error_code);
+
 // Setup PIO "sync" state machine (state machine 0)
 static void
 pio_sync_setup(struct can2040 *cd)
@@ -668,6 +671,11 @@ tx_schedule_transmit(struct can2040 *cd)
             return SI_TXPENDING;
         // Raced with can2040_transmit() - msg is now available for transmit
         pio_signal_set_txpending(cd);
+    } else if ((cd->retry_max != -1) && (cd->retry_count+1 >= cd->retry_max)) {
+        writel(&cd->tx_pull_pos, cd->tx_pull_pos + 1);
+        cd->retry_count = 0;
+        report_callback_error(cd, 1);
+        return 0;
     }
     cd->tx_state = TS_QUEUED;
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_pull_pos)];
@@ -751,6 +759,9 @@ report_handle_eof(struct can2040 *cd)
             report_callback_tx_msg(cd);
         else
             report_callback_rx_msg(cd);
+    } else if (cd->report_state & RS_NEED_TX_ACK) {
+        uint32_t retry_count = cd->retry_count;
+        writel(&cd->retry_count, retry_count + 1);
     }
     cd->report_state = RS_IDLE;
     pio_match_clear(cd);
@@ -923,6 +934,11 @@ data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 static void
 data_state_go_discard(struct can2040 *cd)
 {
+    if (cd->report_state & RS_NEED_TX_ACK) {
+        uint32_t retry_count = cd->retry_count;
+        writel(&cd->retry_count, retry_count + 1);
+    }
+
     report_note_parse_error(cd);
 
     if (pio_rx_check_stall(cd)) {
@@ -1320,10 +1336,12 @@ can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
 // API function to start CANbus interface
 void
 can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
-              , uint32_t gpio_rx, uint32_t gpio_tx)
+              , uint32_t gpio_rx, uint32_t gpio_tx, uint32_t max_retries)
 {
     cd->gpio_rx = gpio_rx;
     cd->gpio_tx = gpio_tx;
+    cd->retry_max = max_retries;
+    cd->retry_count = 0;
     data_state_clear_bits(cd);
     pio_setup(cd, sys_clock, bitrate);
     data_state_go_discard(cd);
@@ -1335,4 +1353,5 @@ can2040_stop(struct can2040 *cd)
 {
     pio_irq_disable(cd);
     pio_sm_setup(cd);
+    cd->retry_count = 0;
 }
