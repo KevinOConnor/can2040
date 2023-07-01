@@ -756,6 +756,7 @@ report_handle_eof(struct can2040 *cd)
         // Successfully processed a new message - report to calling code
         pio_sync_normal_start_signal(cd);
         if (cd->report_state == RS_NEED_TX_EOF)
+            writel(&cd->retry_count, 0);
             report_callback_tx_msg(cd);
         else
             report_callback_rx_msg(cd);
