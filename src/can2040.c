@@ -755,11 +755,12 @@ report_handle_eof(struct can2040 *cd)
     if (cd->report_state & RS_NEED_EOF_FLAG) { // RS_NEED_xX_EOF
         // Successfully processed a new message - report to calling code
         pio_sync_normal_start_signal(cd);
-        if (cd->report_state == RS_NEED_TX_EOF)
+        if (cd->report_state == RS_NEED_TX_EOF) {
             writel(&cd->retry_count, 0);
             report_callback_tx_msg(cd);
-        else
+        } else {
             report_callback_rx_msg(cd);
+        }
     } else if (cd->report_state & RS_NEED_TX_ACK) {
         uint32_t retry_count = cd->retry_count;
         writel(&cd->retry_count, retry_count + 1);
