@@ -670,6 +670,7 @@ tx_schedule_transmit(struct can2040 *cd)
         pio_signal_set_txpending(cd);
     }
     cd->tx_state = TS_QUEUED;
+    cd->stats.tx_attempt++;
     struct can2040_transmit *qt = &cd->tx_queue[tx_qpos(cd, tx_pull_pos)];
     pio_tx_send(cd, qt->stuffed_data, qt->stuffed_words);
     return 0;
@@ -729,6 +730,7 @@ report_callback_error(struct can2040 *cd, uint32_t error_code)
 static void
 report_callback_rx_msg(struct can2040 *cd)
 {
+    cd->stats.rx_total++;
     cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg);
 }
 
@@ -737,6 +739,7 @@ static void
 report_callback_tx_msg(struct can2040 *cd)
 {
     writel(&cd->tx_pull_pos, cd->tx_pull_pos + 1);
+    cd->stats.tx_total++;
     cd->rx_cb(cd, CAN2040_NOTIFY_TX, &cd->parse_msg);
 }
 
@@ -939,6 +942,7 @@ data_state_go_discard(struct can2040 *cd)
 static void
 data_state_go_error(struct can2040 *cd)
 {
+    cd->stats.parse_error++;
     data_state_go_discard(cd);
 }
 
@@ -1348,4 +1352,17 @@ can2040_stop(struct can2040 *cd)
 {
     pio_irq_disable(cd);
     pio_sm_setup(cd);
+}
+
+// API function to access can2040 statistics
+void
+can2040_get_statistics(struct can2040 *cd, struct can2040_stats *stats)
+{
+    for (;;) {
+        memcpy(stats, &cd->stats, sizeof(*stats));
+        if (memcmp(stats, &cd->stats, sizeof(*stats)) == 0)
+            // Successfully copied data
+            return;
+        // Raced with irq handler update - retry copy
+    }
 }

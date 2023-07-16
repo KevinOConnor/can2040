@@ -246,6 +246,52 @@ The can2040 CAN bus processing may be restarted by calling
 To clear the transmit queue before restarting, call `can2040_setup()`,
 `can2040_callback_config()`, and then `can2040_start()`.
 
+## can2040_get_statistics
+
+`void can2040_get_statistics(struct can2040 *cd, struct can2040_stats *stats)`
+
+This function may be called to obtain can2040 receive and transmit
+statistics.  This may be useful for insight on how well the CAN bus
+network hardware is performing.
+
+The caller must allocate a `struct can2040_stats` and pass a pointer
+to it in the `stats` parameter.  The `can2040_get_statistics()`
+function will copy its internal can2040 statistics to the provided
+struct.  The caller may then inspect its local copy of `struct
+can2040_stats` after the function completes.
+
+The `can2040.h` header file provides the definition for `struct
+can2040_stats`.  It has the following fields:
+* `rx_total`: The total number of successfully received messages.
+  This is the number of times that `can2040_rx_cb()` is invoked with
+  `CAN2040_NOTIFY_RX`.
+* `tx_total`: The total number of successfully transmitted messages.
+  This is the number of times that `can2040_rx_cb()` is invoked with
+  `CAN2040_NOTIFY_TX`.
+* `tx_attempt`: The total number of transmit attempts.  If this is
+  more than one greater than `tx_total` it indicates some transmits
+  were retried.  A transmit may be retried due to line arbitration (a
+  transmit attempt was interrupted by a higher priority transmission
+  from another node on the CAN bus), due to the lack of an
+  acknowledgment from another node on the CAN bus, or due to some
+  other parse error during a transmit attempt.
+* `parse_error`: The total number of data errors observed during
+  content parsing on the CAN bus.  This may increment due to hardware
+  noise on the CAN bus, due to error frames generated from other nodes
+  on the CAN bus, due to lack of transmit acknowledgments on the CAN
+  bus, or due to some other error in read data.
+
+The above counters are only set to zero during the initial call to
+`can2040_setup()`.  One may call `can2040_get_statistics()`
+periodically and subtract each counter from the value found at the
+previous call to obtain the statistics over that discrete period.
+When subtracting, it is recommended to store the difference in a
+`uint32_t` for improved handling of 32bit counter rollovers.
+
+It is valid to invoke `can2040_get_statistics()` at any time after
+`can2040_setup()` is called (including from another ARM core and
+including from the user supplied `can2040_rx_cb` callback function).
+
 # Not reentrant safe
 
 Unless explicitly stated otherwise, the can2040 code is not reentrant
