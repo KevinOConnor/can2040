@@ -825,7 +825,7 @@ report_note_eof_success(struct can2040 *cd)
 
 // Parser found unexpected data on input
 static void
-report_note_parse_error(struct can2040 *cd)
+report_note_discarding(struct can2040 *cd)
 {
     if (cd->report_state != RS_IDLE) {
         cd->report_state = RS_IDLE;
@@ -888,7 +888,7 @@ report_line_txpending(struct can2040 *cd)
         return;
     }
     // Tx request from can2040_transmit(), report_note_eof_success(),
-    // or report_note_parse_error().
+    // or report_note_discarding().
     uint32_t check_txpending = tx_schedule_transmit(cd);
     pio_irq_set(cd, (pio_irqs & ~SI_TXPENDING) | check_txpending);
 }
@@ -923,7 +923,7 @@ data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 static void
 data_state_go_discard(struct can2040 *cd)
 {
-    report_note_parse_error(cd);
+    report_note_discarding(cd);
 
     if (pio_rx_check_stall(cd)) {
         // CPU couldn't keep up for some read data - must reset pio state
@@ -935,11 +935,21 @@ data_state_go_discard(struct can2040 *cd)
     data_state_go_next(cd, MS_DISCARD, 32);
 }
 
+// Note a data parse error and transition to discard state
+static void
+data_state_go_error(struct can2040 *cd)
+{
+    data_state_go_discard(cd);
+}
+
 // Received six dominant bits on the line
 static void
 data_state_line_error(struct can2040 *cd)
 {
-    data_state_go_discard(cd);
+    if (cd->parse_state == MS_DISCARD)
+        data_state_go_discard(cd);
+    else
+        data_state_go_error(cd);
 }
 
 // Received six unexpected passive bits on the line
@@ -948,7 +958,7 @@ data_state_line_passive(struct can2040 *cd)
 {
     if (cd->parse_state != MS_DISCARD && cd->parse_state != MS_START) {
         // Bitstuff error
-        data_state_go_discard(cd);
+        data_state_go_error(cd);
         return;
     }
 
@@ -986,7 +996,7 @@ data_state_go_crc(struct can2040 *cd)
 
     int ret = report_note_crc_start(cd);
     if (ret) {
-        data_state_go_discard(cd);
+        data_state_go_error(cd);
         return;
     }
     data_state_go_next(cd, MS_CRC, 16);
@@ -1079,7 +1089,7 @@ static void
 data_state_update_crc(struct can2040 *cd, uint32_t data)
 {
     if (((cd->parse_crc << 1) | 1) != data) {
-        data_state_go_discard(cd);
+        data_state_go_error(cd);
         return;
     }
 
@@ -1097,7 +1107,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
         // data_state_line_passive()
         unstuf_restore_state(&cd->unstuf, (cd->parse_crc_bits << 2) | data);
 
-        data_state_go_discard(cd);
+        data_state_go_error(cd);
         return;
     }
     report_note_ack_success(cd);
@@ -1109,7 +1119,7 @@ static void
 data_state_update_eof0(struct can2040 *cd, uint32_t data)
 {
     if (data != 0x0f || pio_rx_check_stall(cd)) {
-        data_state_go_discard(cd);
+        data_state_go_error(cd);
         return;
     }
     unstuf_clear_state(&cd->unstuf);
@@ -1120,14 +1130,17 @@ data_state_update_eof0(struct can2040 *cd, uint32_t data)
 static void
 data_state_update_eof1(struct can2040 *cd, uint32_t data)
 {
-    if (data >= 0x1c || (data >= 0x18 && report_is_rx_eof_pending(cd)))
-        // Message is considered fully transmitted
+    if (data == 0x1f) {
+        // Success
         report_note_eof_success(cd);
-
-    if (data == 0x1f)
         data_state_go_next(cd, MS_START, 1);
-    else
+    } else if (data >= 0x1c || (data >= 0x18 && report_is_rx_eof_pending(cd))) {
+        // Message fully transmitted - followed by "overload frame"
+        report_note_eof_success(cd);
         data_state_go_discard(cd);
+    } else {
+        data_state_go_error(cd);
+    }
 }
 
 // Handle data received while in MS_DISCARD state
