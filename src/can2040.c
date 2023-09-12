@@ -1,6 +1,6 @@
 // Software CANbus implementation for rp2040
 //
-// Copyright (C) 2022  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2022,2023  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -759,11 +759,11 @@ report_handle_eof(struct can2040 *cd)
     pio_match_clear(cd);
 }
 
-// Check if in an rx message is being processed
+// Check if message being processed is an rx message (not self feedback from tx)
 static int
-report_is_rx_eof_pending(struct can2040 *cd)
+report_is_not_in_tx(struct can2040 *cd)
 {
-    return cd->report_state == RS_NEED_RX_EOF;
+    return !(cd->report_state & RS_NEED_TX_ACK);
 }
 
 // Parser found a new message start
@@ -1139,7 +1139,7 @@ data_state_update_eof1(struct can2040 *cd, uint32_t data)
         // Success
         report_note_eof_success(cd);
         data_state_go_next(cd, MS_START, 1);
-    } else if (data >= 0x1c || (data >= 0x18 && report_is_rx_eof_pending(cd))) {
+    } else if (data >= 0x1c || (data >= 0x18 && report_is_not_in_tx(cd))) {
         // Message fully transmitted - followed by "overload frame"
         report_note_eof_success(cd);
         data_state_go_discard(cd);
