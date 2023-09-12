@@ -926,8 +926,6 @@ data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 static void
 data_state_go_discard(struct can2040 *cd)
 {
-    report_note_discarding(cd);
-
     if (pio_rx_check_stall(cd)) {
         // CPU couldn't keep up for some read data - must reset pio state
         data_state_clear_bits(cd);
@@ -936,6 +934,9 @@ data_state_go_discard(struct can2040 *cd)
     }
 
     data_state_go_next(cd, MS_DISCARD, 32);
+
+    // Clear report state and update hw irqs after transition to MS_DISCARD
+    report_note_discarding(cd);
 }
 
 // Note a data parse error and transition to discard state
