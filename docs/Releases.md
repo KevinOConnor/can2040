@@ -1,5 +1,17 @@
 History of can2040 releases.
 
+# v1.6.0
+
+Available on 20231001. Major features in this release:
+* Added a new `can2040_stop()` API function. This function can be used
+  to either temporary pause or permanently halt the processing of CAN
+  bus messages. It is effectively the inverse of the existing
+  `can2040_start()` function.
+* Added a new `can2040_get_statistics()` API function. This can be
+  used to monitor the low-level performance of the CAN bus interface.
+  In particular it can monitor the number of can2040 parse errors and
+  retransmit attempts.
+
 # v1.5.0
 
 Available on 20230520. Major features in this release:
