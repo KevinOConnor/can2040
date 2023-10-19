@@ -238,7 +238,7 @@ If this function is called while a message is queued for transmit then
 it is possible that the message may be successfully transmitted
 without it being removed from the local transmit queue and without a
 `CAN2040_NOTIFY_TX` event sent to the user supplied `can2040_rx_cb()`
-callback function,
+callback function.
 
 The can2040 CAN bus processing may be restarted by calling
 `can2040_start()`.
