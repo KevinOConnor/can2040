@@ -319,6 +319,32 @@ to itself, but it is not required to synchronize between instances.
 One may run both can2040 instances on the same ARM core or different
 ARM cores.
 
+# Low interrupt latency
+
+The can2040 implementation requires low interrupt response time for
+proper operation.  See the
+[Features Document](Features.md#software-utilization)
+for more information on the impact of latency to can2040.
+
+To ensure low-latency it is recommended to limit the amount of code
+that runs at a higher interrupt priority than can2040.  Higher
+priority code would be any code that disables interrupts and any
+interrupt handling code that is registered with a higher priority (a
+lower or equal value passed to `NVIC_SetPriority()`).
+
+Also consider loading the can2040 code (and any code that runs at a
+higher priority) into memory on the rp2040 chip.  An rp2040 running at
+125Mhz will take a minimum of 320ns for each 32bit load from flash.
+Thus, even a handful of flash accesses (to load instructions or data)
+may cause a delay sufficient to impact can2040.  Be sure to also load
+the can2040 callback function into ram.  Consider also loading the ARM
+core interrupt vector table into ram (if it is not already in ram).
+
+The specifics of loading code into ram is beyond the scope of this
+document.  At a high-level, it typically involves locating the build
+"linker script" and adding `can2040.o(.text*)` and
+`can2040.o(.rodata*)` to the ram segment.
+
 # Using can2040 from C++
 
 The can2040 code is intended to be compiled with gcc.  If can2040.c is
