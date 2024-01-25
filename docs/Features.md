@@ -115,7 +115,7 @@ software overhead of can2040 when sharing an ARM core.
   result in a high-priority message from the node being delayed during
   periods of high bus contention.
 
-  Above ~81 bit times: The code may not have sufficient time to read
+  Above ~80 bit times: The code may not have sufficient time to read
   all bytes before the "PIO FIFO queue" overflows.  As a result,
   received messages on the CAN bus sent to the node may be permanently
   lost and messages transmitted from the node may be transmitted
