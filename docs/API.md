@@ -11,9 +11,10 @@ compiler. The can2040 implementation is contained in the
 files.  The code is intended to be compiled at `-O2` (or higher)
 optimization.
 
-The code depends on a few files from the [rp2040
-sdk](https://github.com/raspberrypi/pico-sdk.git) that must be in the
-include path when compiling can2040.  For example:
+The code depends on a few files from the
+[rp2040 sdk](https://github.com/raspberrypi/pico-sdk.git) (version
+1.3.0 or later) that must be in the include path when compiling
+can2040.  For example:
 `arm-none-eabi-gcc -O2 -I/path/to/sdk/src/rp2040/ -I/path/to/sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RaspberryPi/RP2040/Include/ ...`
 
 # Startup
