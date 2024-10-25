@@ -6,8 +6,8 @@
 
 #include <stdint.h> // uint32_t
 #include <string.h> // memset
-#include "RP2040.h" // hw_set_bits
 #include "can2040.h" // can2040_setup
+#include "cmsis_gcc.h" // __DMB
 #include "hardware/regs/dreq.h" // DREQ_PIO0_RX1
 #include "hardware/structs/dma.h" // dma_hw
 #include "hardware/structs/iobank0.h" // iobank0_hw
