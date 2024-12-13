@@ -506,7 +506,7 @@ unstuf_restore_state(struct can2040_bitunstuffer *bu, uint32_t data)
 
 // Pull bits from unstuffer (as specified in unstuf_set_count() )
 static int
-unstuf_pull_bits(struct can2040_bitunstuffer *bu)
+unstuf_pull_bits_rp2040(struct can2040_bitunstuffer *bu)
 {
     uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
     uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
@@ -547,6 +547,49 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
         if (likely(!cs))
             // Need more data
             return 1;
+    }
+}
+
+// Pull bits from unstuffer (optimized for rp2350)
+static int
+unstuf_pull_bits(struct can2040_bitunstuffer *bu)
+{
+    if (!IS_RP2350)
+        return unstuf_pull_bits_rp2040(bu);
+    uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
+    uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
+    uint32_t cs = bu->count_stuff, cu = bu->count_unstuff;
+    for (;;) {
+        if (!cs)
+            // Need more data
+            return 1;
+        uint32_t try_cnt = cs > cu ? cu : cs;
+        uint32_t try_mask = ((1 << try_cnt) - 1) << (cs + 1 - try_cnt);
+        uint32_t rm_masked_bits = rm_bits & try_mask;
+        if (likely(!rm_masked_bits)) {
+            // No stuff bits in try_cnt bits - copy into unstuffed_bits
+            bu->count_unstuff = cu = cu - try_cnt;
+            bu->count_stuff = cs = cs - try_cnt;
+            bu->unstuffed_bits |= ((sb >> cs) & ((1 << try_cnt) - 1)) << cu;
+            if (! cu)
+                // Extracted desired bits
+                return 0;
+            // Need more data
+            return 1;
+        }
+        // Copy any leading bits prior to stuff bit (may be zero)
+        uint32_t copy_cnt = cs - (31 - __builtin_clz(rm_masked_bits));
+        cs -= copy_cnt;
+        bu->count_unstuff = cu = cu - copy_cnt;
+        bu->unstuffed_bits |= ((sb >> cs) & ((1 << copy_cnt) - 1)) << cu;
+        // High bit is now a stuff bit - remove it
+        bu->count_stuff = cs = cs - 1;
+        if (unlikely(rm_bits & (1 << cs))) {
+            // Six consecutive bits - a bitstuff error
+            if (sb & (1 << cs))
+                return -1;
+            return -2;
+        }
     }
 }
 

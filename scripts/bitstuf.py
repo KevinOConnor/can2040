@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Tool for testing bitstuffing implementations
 #
-# Copyright (C) 2022  Kevin O'Connor <kevin@koconnor.net>
+# Copyright (C) 2022-2024  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import sys
@@ -10,6 +10,10 @@ TESTBITS=20
 
 def report(msg):
     sys.stderr.write("\n" + msg + "\n")
+
+def clz(v):
+    v &= 0xffffffff
+    return 32 - v.bit_length()
 
 LOOP = UNLOOP = 0
 
@@ -173,6 +177,46 @@ def bitunstuf_batch_pass4(sb, num_bits):
             try_cnt = cu if cu < cs else cs
         else:
             try_cnt //= 2
+
+def bitunstuf_clz(sb, num_bits):
+    global UNLOOP
+    edges = sb ^ (sb >> 1)
+    e2 = edges | (edges >> 1)
+    e4 = e2 | (e2 >> 2)
+    rm_bits = ~e4
+    unstuffed_bits = 0
+    cu = TESTBITS
+    cs = num_bits
+    while 1:
+        UNLOOP += 1
+        if not cs:
+            # Need more data
+            return -999
+        try_cnt = cu if cu < cs else cs
+        try_mask = ((1 << try_cnt) - 1) << (cs + 1 - try_cnt)
+        rm_masked_bits = rm_bits & try_mask
+        if not rm_masked_bits:
+            # No stuff bits in try_cnt bits - copy into unstuffed_bits
+            cu -= try_cnt
+            cs -= try_cnt
+            unstuffed_bits |= ((sb >> cs) & ((1 << try_cnt) - 1)) << cu
+            if not cu:
+                # Extracted desired bits
+                return unstuffed_bits
+            # Need more data
+            return -999
+        # Copy any leading bits prior to stuff bit (may be zero)
+        copy_cnt = cs - (31 - clz(rm_masked_bits))
+        cs -= copy_cnt
+        cu -= copy_cnt
+        unstuffed_bits |= ((sb >> cs) & ((1 << copy_cnt) - 1)) << cu
+        # High bit is now a stuff bit - remove it
+        cs -= 1
+        if rm_bits & (1 << cs):
+            # Six consecutive bits - a bitstuff error
+            if (sb >> cs) & 1:
+                return -cs
+            return -cs
 
 def main():
     stuf_func = bitstuf_batch
