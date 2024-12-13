@@ -5,12 +5,12 @@ facilitate development and may be useful as coding examples.
 # Klipper
 
 The [Klipper](https://www.klipper3d.org/) code utilizes can2040 for
-micro-controller CAN bus communication on rp2040 chips.
+micro-controller CAN bus communication on rp2040/rp2350 chips.
 
 Klipper can also be compiled in a [USB to CAN bus bridge
 mode](https://www.klipper3d.org/CANBUS.html#usb-to-can-bus-bridge-mode)
-so that an rp2040 device appears as a standard Linux USB to CAN bus
-adapter (using the "gs_usb" Linux driver).  Compiling the Klipper
+so that an rp2040/rp2350 device appears as a standard Linux USB to CAN
+bus adapter (using the "gs_usb" Linux driver).  Compiling the Klipper
 micro-controller code in this mode may be useful for CAN bus
 diagnostics even when not using Klipper.  See the [Klipper
 installation](https://www.klipper3d.org/Installation.html)
@@ -22,16 +22,16 @@ Raspberry Pi computer the installation involves:
    (`sudo apt-get update && sudo apt-get install build-essential libncurses-dev libusb-dev libnewlib-arm-none-eabi gcc-arm-none-eabi binutils-arm-none-eabi libusb-1.0 pkg-config`).
 3. Configure the micro-controller software (`make menuconfig`).
    Select "Enable extra low-level configuration options", select
-   "Raspberry Pi RP2040" as the micro-controller, select "No
+   "Raspberry Pi RP2040/RP235x" as the micro-controller, select "No
    bootloader", select "USB to CAN bus bridge", set the appropriate
    gpio pins for CAN RX and CAN TX, and set the desired CAN bus
    frequency.
 4. Build the micro-controller software (`make`).
-5. Place the rp2040 micro-controller in bootloader mode and flash the
-   software (`make flash FLASH_DEVICE=2e8a:0003`).
+5. Place the rp2040/rp2350 micro-controller in bootloader mode and
+   flash the software (`make flash FLASH_DEVICE=2e8a:0003`).
 
-Once the Klipper micro-controller code is running on the rp2040 it is
-possible to use the Linux
+Once the Klipper micro-controller code is running on the rp2040/rp2350
+it is possible to use the Linux
 [can-utils](https://github.com/linux-can/can-utils) tools.  Briefly:
 1. Install the can-utils package
    (`sudo apt-get update && sudo apt-get install can-utils`).
@@ -44,9 +44,9 @@ possible to use the Linux
 4. In another window, send packets on the CAN bus
    (eg, `cansend can0 123#121212121212`).
 
-# CanBoot
+# Katapult
 
-The [CanBoot](https://github.com/Arksine/CanBoot) code implements a
+The [Katapult](https://github.com/Arksine/Katapult) code implements a
 cross-platform bootloader that supports flashing an rp2040
 micro-controller over CAN bus.  It utilizes can2040 on rp2040 chips.
 

@@ -1,6 +1,6 @@
 // Software CANbus implementation for rp2040
 //
-// Copyright (C) 2022,2023  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2022-2024  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -19,6 +19,13 @@
 /****************************************************************
  * rp2040 and low-level helper functions
  ****************************************************************/
+
+// Determine if the target is an rp2350
+#ifdef PICO_RP2350
+  #define IS_RP2350 1
+#else
+  #define IS_RP2350 0
+#endif
 
 // Helper compiler definitions
 #define barrier() __asm__ __volatile__("": : :"memory")
@@ -382,6 +389,10 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
 {
     // Configure pio0 clock
     uint32_t rb = cd->pio_num ? RESETS_RESET_PIO1_BITS : RESETS_RESET_PIO0_BITS;
+#if IS_RP2350
+    if (cd->pio_num == 2)
+        rb = RESETS_RESET_PIO2_BITS;
+#endif
     rp2040_clear_reset(rb);
 
     // Setup and sync pio state machine clocks
@@ -395,7 +406,7 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
     pio_sm_setup(cd);
 
     // Map Rx/Tx gpios
-    uint32_t pio_func = cd->pio_num ? 7 : 6;
+    uint32_t pio_func = 6 + cd->pio_num;
     rp2040_gpio_peripheral(cd->gpio_rx, pio_func, 1);
     rp2040_gpio_peripheral(cd->gpio_tx, pio_func, 0);
 }
@@ -1326,6 +1337,12 @@ can2040_setup(struct can2040 *cd, uint32_t pio_num)
     memset(cd, 0, sizeof(*cd));
     cd->pio_num = !!pio_num;
     cd->pio_hw = cd->pio_num ? pio1_hw : pio0_hw;
+#if IS_RP2350
+    if (pio_num == 2) {
+        cd->pio_num = pio_num;
+        cd->pio_hw = pio2_hw;
+    }
+#endif
 }
 
 // API function to configure callback

@@ -4,8 +4,8 @@ information on the can2040 code organization and objectives.
 
 # PIO state machines
 
-The can2040 code uses the rp2040 PIO (Programmable Input Output)
-hardware feature.  See the [rp2040
+The can2040 code uses the rp2040/rp2350 PIO (Programmable Input
+Output) hardware feature.  See the [rp2040
 datasheet](https://www.raspberrypi.com/documentation/microcontrollers/rp2040.html)
 for information on the hardware.
 

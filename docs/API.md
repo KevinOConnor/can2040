@@ -12,10 +12,14 @@ files.  The code is intended to be compiled at `-O2` (or higher)
 optimization.
 
 The code depends on a few files from the
-[rp2040 sdk](https://github.com/raspberrypi/pico-sdk.git) (version
+[pico sdk](https://github.com/raspberrypi/pico-sdk.git) (version
 1.3.0 or later) that must be in the include path when compiling
 can2040.  For example:
 `arm-none-eabi-gcc -O2 -I/path/to/sdk/src/rp2040/ -I/path/to/sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RaspberryPi/RP2040/Include/ ...`
+
+If compiling for the rp2350 then pico_sdk version 2.0.0 or later is
+required and the compiler flags must include `-DPICO_RP2350` (the
+pico-sdk build rules typically provide this definition).
 
 # Startup
 
@@ -98,7 +102,8 @@ parameter.  The caller must either statically or dynamically allocate
 it prior to calling this function.
 
 The `pio_num` should be either `0` or `1` to use either the `PIO0` or
-`PIO1` rp2040 hardware block.
+`PIO1` hardware block.  On the rp2350 the `pio_num` may be `2` for
+`PIO2`.
 
 ## can2040_callback_config
 
@@ -149,22 +154,22 @@ their callback function.
 `void can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate, uint32_t gpio_rx, uint32_t gpio_tx)`
 
 This function starts the main can2040 CAN bus implementation.  The
-provided GPIO pins will be configured and associated with the rp2040
-PIO hardware block.
+provided GPIO pins will be configured and associated with the
+rp2040/rp2350 PIO hardware block.
 
 The `sys_clock` parameter specifies the system clock rate (for example
-`125000000` for an rp2040 ARM core running at 125Mhz).
+`125000000` for an rp2040/rp2350 ARM core running at 125Mhz).
 
 The `bitrate` parameter specifies the CAN bus speed (for example
 `500000` for a 500Kbit/s CAN bus).
 
-The `gpio_rx` parameter specifies the rp2040 gpio number that is
-routed to the "CAN RX" pin of the CAN bus transceiver.  It should be
-between 0 and 29 (for GPIO0 to GPIO29).
+The `gpio_rx` parameter specifies the rp2040/rp2350 gpio number that
+is routed to the "CAN RX" pin of the CAN bus transceiver.  It should
+be between 0 and 29 (for GPIO0 to GPIO29).
 
-The `gpio_tx` parameter specifies the rp2040 gpio number that is
-routed to the "CAN TX" pin of the CAN bus transceiver.  It should be
-between 0 and 29 (for GPIO0 to GPIO29).
+The `gpio_tx` parameter specifies the rp2040/rp2340 gpio number that
+is routed to the "CAN TX" pin of the CAN bus transceiver.  It should
+be between 0 and 29 (for GPIO0 to GPIO29).
 
 After calling this function, activity on the CAN bus may result in the
 user specified `can2040_rx_cb` callback being invoked.
@@ -305,20 +310,21 @@ the user supplied `can2040_rx_cb` callback function.
 
 # Multiple can2040 instances
 
-Each instance of can2040 uses one of the two PIO hardware blocks on
-the rp2040.  If there are two separate CAN transceivers (and two
-separate sets of CAN rx and CAN tx gpio pins) then one may create two
+Each instance of can2040 uses one of the PIO hardware blocks on the
+rp2040/rp2350.  If there are separate CAN transceivers (and separate
+sets of CAN rx and CAN tx gpio pins) then one may create multiple
 simultaneous instances of can2040.
 
 To use this functionality, the [startup code](#startup) should be run
-twice, each with their own separate instance of a `struct can2040`.
+multiple times, each with their own separate instance of a `struct
+can2040`.
 
 In this case, the multiple instances of can2040 do not share state.
 Therefore, no particular synchronization is needed between instances.
 That is, one must ensure each instance is not reentrant with respect
 to itself, but it is not required to synchronize between instances.
-One may run both can2040 instances on the same ARM core or different
-ARM cores.
+One may run multiple can2040 instances on the same ARM core or
+different ARM cores.
 
 # Low interrupt latency
 
@@ -334,12 +340,13 @@ interrupt handling code that is registered with a higher priority (a
 lower or equal value passed to `NVIC_SetPriority()`).
 
 Also consider loading the can2040 code (and any code that runs at a
-higher priority) into memory on the rp2040 chip.  An rp2040 running at
-125Mhz will take a minimum of 320ns for each 32bit load from flash.
-Thus, even a handful of flash accesses (to load instructions or data)
-may cause a delay sufficient to impact can2040.  Be sure to also load
-the can2040 callback function into ram.  Consider also loading the ARM
-core interrupt vector table into ram (if it is not already in ram).
+higher priority) into memory on the rp2040/rp2350 chip.  An rp2040
+running at 125Mhz will take a minimum of 320ns for each 32bit load
+from flash.  Thus, even a handful of flash accesses (to load
+instructions or data) may cause a delay sufficient to impact can2040.
+Be sure to also load the can2040 callback function into ram.  Consider
+also loading the ARM core interrupt vector table into ram (if it is
+not already in ram).
 
 The specifics of loading code into ram is beyond the scope of this
 document.  At a high-level, it typically involves locating the build
