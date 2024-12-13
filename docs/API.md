@@ -163,13 +163,19 @@ The `sys_clock` parameter specifies the system clock rate (for example
 The `bitrate` parameter specifies the CAN bus speed (for example
 `500000` for a 500Kbit/s CAN bus).
 
-The `gpio_rx` parameter specifies the rp2040/rp2350 gpio number that
-is routed to the "CAN RX" pin of the CAN bus transceiver.  It should
-be between 0 and 29 (for GPIO0 to GPIO29).
+The `gpio_rx` parameter specifies the gpio number that is routed to
+the "CAN RX" pin of the CAN bus transceiver.  On rp2040 it should be
+between 0 and 29 (for GPIO0 to GPIO29).  On the rp2350 chips it may be
+between 0 and 31 (for GPIO0 to GPIO31), or alternatively between 16
+and 47 (for GPIO16 to GPIO47) if both `gpio_rx` and `gpio_tx` are
+between 16 and 47.
 
-The `gpio_tx` parameter specifies the rp2040/rp2340 gpio number that
-is routed to the "CAN TX" pin of the CAN bus transceiver.  It should
-be between 0 and 29 (for GPIO0 to GPIO29).
+The `gpio_tx` parameter specifies the gpio number that is routed to
+the "CAN TX" pin of the CAN bus transceiver.  On rp2040 chips it
+should be between 0 and 29 (for GPIO0 to GPIO29).  On the rp2350 chips
+it may be between 0 and 31 (for GPIO0 to GPIO31), or alternatively
+between 16 and 47 (for GPIO16 to GPIO47) if both `gpio_rx` and
+`gpio_tx` are between 16 and 47.
 
 After calling this function, activity on the CAN bus may result in the
 user specified `can2040_rx_cb` callback being invoked.

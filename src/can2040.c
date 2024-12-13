@@ -130,19 +130,29 @@ static const uint16_t can2040_program_instructions[] = {
 #define SI_RX_DATA   PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
 #define SI_TXPENDING PIO_IRQ0_INTE_SM1_BITS // Misc bit manually forced
 
+// Return the gpio bank offset (on rp2350 chips)
+static uint32_t
+pio_gpiobase(struct can2040 *cd)
+{
+    if (!IS_RP2350)
+        return 0;
+    return (cd->gpio_rx > 31 || cd->gpio_tx > 31) ? 16 : 0;
+}
+
 // Setup PIO "sync" state machine (state machine 0)
 static void
 pio_sync_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_sm_hw_t *sm = &pio_hw->sm[0];
+    uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
-        cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
+        gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
         | (can2040_offset_sync_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_sync_signal_start << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->pinctrl = (
         1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
-        | cd->gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
+        | gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
     pio_hw->txf[0] = 9 + 6 * PIO_CLOCK_PER_BIT / 2;
@@ -156,10 +166,11 @@ pio_rx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_sm_hw_t *sm = &pio_hw->sm[1];
+    uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
         (can2040_offset_shared_rx_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_shared_rx_read << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
-    sm->pinctrl = cd->gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
+    sm->pinctrl = gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
     sm->shiftctrl = 0; // flush fifo on a restart
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_RX_BITS
                      | PIO_RX_WAKE_BITS << PIO_SM0_SHIFTCTRL_PUSH_THRESH_LSB
@@ -176,7 +187,8 @@ pio_match_setup(struct can2040 *cd)
     sm->execctrl = (
         (can2040_offset_match_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_shared_rx_read << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
-    sm->pinctrl = cd->gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
+    uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
+    sm->pinctrl = gpio_rx << PIO_SM0_PINCTRL_IN_BASE_LSB;
     sm->shiftctrl = 0;
     sm->instr = 0xe040; // set y, 0
     sm->instr = 0xa0e2; // mov osr, y
@@ -190,16 +202,18 @@ pio_tx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_sm_hw_t *sm = &pio_hw->sm[3];
+    uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
+    uint32_t gpio_tx = (cd->gpio_tx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
-        cd->gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
+        gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
         | can2040_offset_tx_conflict << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_tx_conflict << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
     sm->pinctrl = (1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
                    | 1 << PIO_SM0_PINCTRL_OUT_COUNT_LSB
-                   | cd->gpio_tx << PIO_SM0_PINCTRL_SET_BASE_LSB
-                   | cd->gpio_tx << PIO_SM0_PINCTRL_OUT_BASE_LSB);
+                   | gpio_tx << PIO_SM0_PINCTRL_SET_BASE_LSB
+                   | gpio_tx << PIO_SM0_PINCTRL_OUT_BASE_LSB);
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0xe081; // set pindirs, 1
 }
@@ -401,6 +415,11 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
     int i;
     for (i=0; i<4; i++)
         pio_hw->sm[i].clkdiv = div << PIO_SM0_CLKDIV_FRAC_LSB;
+
+    // Configure gpiobase (on rp2350)
+#if IS_RP2350
+    pio_hw->gpiobase = pio_gpiobase(cd);
+#endif
 
     // Configure state machines
     pio_sm_setup(cd);

@@ -19,7 +19,8 @@ bus implementation.
 
 * Works with standard CAN bus transceivers.  On the rp2040, any two
   gpio pins may be used for the "can rx" and "can tx" wires.  On the
-  rp2350, any two gpio pins from GPIO0 to GPIO31 may be used.
+  rp2350, any two gpio pins from GPIO0 to GPIO31 or any two pins from
+  GPIO16 to GPIO47 may be used.
 
 # Protocol details
 
