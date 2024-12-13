@@ -607,7 +607,7 @@ unstuf_get_raw(struct can2040_bitunstuffer *bu)
 
 // Stuff 'num_bits' bits in '*pb' - upper bits must already be stuffed
 static uint32_t
-bitstuff(uint32_t *pb, uint32_t num_bits)
+bitstuff_rp2040(uint32_t *pb, uint32_t num_bits)
 {
     uint32_t b = *pb, count = num_bits;
     for (;;) {
@@ -640,6 +640,34 @@ bitstuff(uint32_t *pb, uint32_t num_bits)
         }
     }
 done:
+    *pb = b;
+    return count;
+}
+
+// Stuff 'num_bits' bits in '*pb' (optimized for rp2350)
+static uint32_t
+bitstuff(uint32_t *pb, uint32_t num_bits)
+{
+    if (!IS_RP2350)
+        return bitstuff_rp2040(pb, num_bits);
+    uint32_t b = *pb, count = num_bits;
+    for (;;) {
+        uint32_t edges = b ^ (b >> 1);
+        uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), add_bits = ~e4;
+        uint32_t mask = (1 << num_bits) - 1, add_masked_bits = add_bits & mask;
+        if (!add_masked_bits)
+            // No more stuff bits needed
+            break;
+        // Insert a stuff bit
+        uint32_t stuff_pos = 1 + 31 - __builtin_clz(add_masked_bits);
+        uint32_t low_mask = (1 << stuff_pos) - 1, low = b & low_mask;
+        uint32_t high = (b & ~(low_mask >> 1)) << 1;
+        b = high ^ low ^ (1 << (stuff_pos - 1));
+        count += 1;
+        if (stuff_pos <= 4)
+            break;
+        num_bits = stuff_pos - 4;
+    }
     *pb = b;
     return count;
 }

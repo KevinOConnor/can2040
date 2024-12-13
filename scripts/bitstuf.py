@@ -69,6 +69,31 @@ def bitstuf_batch(b, num_bits):
             num_bits -= 1
             try_cnt //= 2
 
+def bitstuf_clz(b, num_bits):
+    global LOOP
+    count = num_bits
+    while 1:
+        LOOP += 1
+        edges = b ^ (b >> 1)
+        e2 = edges | (edges >> 1)
+        e4 = e2 | (e2 >> 2)
+        add_bits = ~e4
+        mask = (1 << num_bits) - 1
+        add_masked_bits = add_bits & mask
+        if not add_masked_bits:
+            # No more stuff bits needed
+            return b, count
+        # Insert a stuff bit
+        stuff_pos = 1 + 31 - clz(add_masked_bits)
+        low_mask = (1 << stuff_pos) - 1
+        low = b & low_mask
+        high = (b & ~(low_mask >> 1)) << 1
+        b = high ^ low ^ (1 << (stuff_pos - 1))
+        count += 1
+        if stuff_pos <= 4:
+            return b, count
+        num_bits = stuff_pos - 4
+
 def bitunstuf(sb, num_bits):
     global UNLOOP
     edges = sb ^ (sb >> 1)
