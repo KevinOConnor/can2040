@@ -1,5 +1,12 @@
 History of can2040 releases.
 
+# v1.7.0
+
+Available on 20250102. Major features in this release:
+* Support for rp2350 chips. The can2040 code can now run on either
+  rp2040 chips or rp2350 chips.
+* Support for v2.0.0 of the pico-sdk.
+
 # v1.6.0
 
 Available on 20231001. Major features in this release:
