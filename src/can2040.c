@@ -7,13 +7,13 @@
 #include <stdint.h> // uint32_t
 #include <string.h> // memset
 #include "can2040.h" // can2040_setup
-#include "cmsis_gcc.h" // __DMB
 #include "hardware/regs/dreq.h" // DREQ_PIO0_RX1
 #include "hardware/structs/dma.h" // dma_hw
 #include "hardware/structs/iobank0.h" // iobank0_hw
 #include "hardware/structs/padsbank0.h" // padsbank0_hw
 #include "hardware/structs/pio.h" // pio0_hw
 #include "hardware/structs/resets.h" // RESETS_RESET_PIO0_BITS
+#include "hardware/sync.h" // __dmb
 
 
 /****************************************************************
@@ -25,6 +25,10 @@
   #define IS_RP2350 1
 #else
   #define IS_RP2350 0
+#endif
+
+#ifndef __DMB
+#define __DMB __dmb
 #endif
 
 // Helper compiler definitions
