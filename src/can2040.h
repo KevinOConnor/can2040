@@ -3,6 +3,12 @@
 
 #include <stdint.h> // uint32_t
 
+#if CAN2040_ISR_IN_RAM
+#define CAN2040_ISR_FUNC(func_name) __not_in_flash(__STRING(func_name)) func_name
+#else
+#define CAN2040_ISR_FUNC(func_name) func_name
+#endif
+
 struct can2040_msg {
     uint32_t id;
     uint32_t dlc;

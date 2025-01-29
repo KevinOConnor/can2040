@@ -51,7 +51,7 @@ static inline uint32_t readl(const void *addr) {
 
 // rp2040 helper function to clear a hardware reset bit
 static void
-rp2040_clear_reset(uint32_t reset_bit)
+CAN2040_ISR_FUNC(rp2040_clear_reset)(uint32_t reset_bit)
 {
     if (resets_hw->reset & reset_bit) {
         hw_clear_bits(&resets_hw->reset, reset_bit);
@@ -62,7 +62,7 @@ rp2040_clear_reset(uint32_t reset_bit)
 
 // Helper to set the mode and extended function of a pin
 static void
-rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
+CAN2040_ISR_FUNC(rp2040_gpio_peripheral)(uint32_t gpio, int func, int pull_up)
 {
     padsbank0_hw->io[gpio] = (
         PADS_BANK0_GPIO0_IE_BITS
@@ -224,7 +224,7 @@ pio_tx_setup(struct can2040 *cd)
 
 // Set PIO "sync" machine to signal "may transmit" (sm irq 0) on 11 idle bits
 static void
-pio_sync_normal_start_signal(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_sync_normal_start_signal)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t eom_idx = can2040_offset_sync_found_end_of_message;
@@ -233,7 +233,7 @@ pio_sync_normal_start_signal(struct can2040 *cd)
 
 // Set PIO "sync" machine to signal "may transmit" (sm irq 0) on 17 idle bits
 static void
-pio_sync_slow_start_signal(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_sync_slow_start_signal)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t eom_idx = can2040_offset_sync_found_end_of_message;
@@ -242,7 +242,7 @@ pio_sync_slow_start_signal(struct can2040 *cd)
 
 // Test if PIO "rx" state machine has overflowed its fifos
 static int
-pio_rx_check_stall(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_rx_check_stall)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     return pio_hw->fdebug & (1 << (PIO_FDEBUG_RXSTALL_LSB + 1));
@@ -250,7 +250,7 @@ pio_rx_check_stall(struct can2040 *cd)
 
 // Set PIO "match" state machine to raise a "matched" signal on a bit sequence
 static void
-pio_match_check(struct can2040 *cd, uint32_t match_key)
+CAN2040_ISR_FUNC(pio_match_check)(struct can2040 *cd, uint32_t match_key)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->txf[2] = match_key;
@@ -265,14 +265,14 @@ pio_match_calc_key(uint32_t raw_bits, uint32_t rx_bit_pos)
 
 // Cancel any pending checks on PIO "match" state machine
 static void
-pio_match_clear(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_match_clear)(struct can2040 *cd)
 {
     pio_match_check(cd, 0);
 }
 
 // Flush and halt PIO "tx" state machine
 static void
-pio_tx_reset(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_tx_reset)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->ctrl = 0x07 << PIO_CTRL_SM_ENABLE_LSB;
@@ -288,7 +288,7 @@ pio_tx_reset(struct can2040 *cd)
 
 // Queue a message for transmission on PIO "tx" state machine
 static void
-pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
+CAN2040_ISR_FUNC(pio_tx_send)(struct can2040 *cd, uint32_t *data, uint32_t count)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
@@ -306,7 +306,7 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
 
 // Set PIO "tx" state machine to inject an ack after a CRC match
 static void
-pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
+CAN2040_ISR_FUNC(pio_tx_inject_ack)(struct can2040 *cd, uint32_t match_key)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
@@ -324,7 +324,7 @@ pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
 
 // Did PIO "tx" state machine unexpectedly finish a transmit attempt?
 static int
-pio_tx_did_fail(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_tx_did_fail)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     // Check for passive/dominant bit conflict without parser noticing
@@ -337,7 +337,7 @@ pio_tx_did_fail(struct can2040 *cd)
 
 // Enable host irqs for state machine signals
 static void
-pio_irq_set(struct can2040 *cd, uint32_t sm_irqs)
+CAN2040_ISR_FUNC(pio_irq_set)(struct can2040 *cd, uint32_t sm_irqs)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = sm_irqs | SI_RX_DATA;
@@ -345,7 +345,7 @@ pio_irq_set(struct can2040 *cd, uint32_t sm_irqs)
 
 // Completely disable host irqs
 static void
-pio_irq_disable(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_irq_disable)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->inte0 = 0;
@@ -353,7 +353,7 @@ pio_irq_disable(struct can2040 *cd)
 
 // Return current host irq mask
 static uint32_t
-pio_irq_get(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_irq_get)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     return pio_hw->inte0;
@@ -361,7 +361,7 @@ pio_irq_get(struct can2040 *cd)
 
 // Raise the txpending flag
 static void
-pio_signal_set_txpending(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_signal_set_txpending)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->irq_force = SI_TXPENDING >> 8;
@@ -369,7 +369,7 @@ pio_signal_set_txpending(struct can2040 *cd)
 
 // Clear the txpending flag
 static void
-pio_signal_clear_txpending(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_signal_clear_txpending)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->irq = SI_TXPENDING >> 8;
@@ -377,7 +377,7 @@ pio_signal_clear_txpending(struct can2040 *cd)
 
 // Setup PIO state machines
 static void
-pio_sm_setup(struct can2040 *cd)
+CAN2040_ISR_FUNC(pio_sm_setup)(struct can2040 *cd)
 {
     // Reset state machines
     pio_hw_t *pio_hw = cd->pio_hw;
@@ -403,7 +403,7 @@ pio_sm_setup(struct can2040 *cd)
 
 // Initial setup of gpio pins and PIO state machines
 static void
-pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
+CAN2040_ISR_FUNC(pio_setup)(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
 {
     // Configure pio0 clock
     uint32_t rb = cd->pio_num ? RESETS_RESET_PIO1_BITS : RESETS_RESET_PIO0_BITS;
@@ -751,14 +751,14 @@ enum {
 
 // Calculate queue array position from a transmit index
 static uint32_t
-tx_qpos(struct can2040 *cd, uint32_t pos)
+CAN2040_ISR_FUNC(tx_qpos)(struct can2040 *cd, uint32_t pos)
 {
     return pos % ARRAY_SIZE(cd->tx_queue);
 }
 
 // Queue the next message for transmission in the PIO
 static uint32_t
-tx_schedule_transmit(struct can2040 *cd)
+CAN2040_ISR_FUNC(tx_schedule_transmit)(struct can2040 *cd)
 {
     if (cd->tx_state == TS_QUEUED && !pio_tx_did_fail(cd))
         // Already queued or actively transmitting
@@ -783,7 +783,7 @@ tx_schedule_transmit(struct can2040 *cd)
 
 // Setup PIO state for ack injection
 static void
-tx_inject_ack(struct can2040 *cd, uint32_t match_key)
+CAN2040_ISR_FUNC(tx_inject_ack)(struct can2040 *cd, uint32_t match_key)
 {
     cd->tx_state = TS_ACKING_RX;
     pio_tx_inject_ack(cd, match_key);
@@ -791,7 +791,7 @@ tx_inject_ack(struct can2040 *cd, uint32_t match_key)
 
 // Check if the current parsed message is feedback from current transmit
 static int
-tx_check_local_message(struct can2040 *cd)
+CAN2040_ISR_FUNC(tx_check_local_message)(struct can2040 *cd)
 {
     if (cd->tx_state != TS_QUEUED)
         return 0;
@@ -825,7 +825,7 @@ enum {
 
 // Report error to calling code (via callback interface)
 static void
-report_callback_error(struct can2040 *cd, uint32_t error_code)
+CAN2040_ISR_FUNC(report_callback_error)(struct can2040 *cd, uint32_t error_code)
 {
     struct can2040_msg msg = {};
     cd->rx_cb(cd, CAN2040_NOTIFY_ERROR | error_code, &msg);
@@ -833,7 +833,7 @@ report_callback_error(struct can2040 *cd, uint32_t error_code)
 
 // Report a received message to calling code (via callback interface)
 static void
-report_callback_rx_msg(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_callback_rx_msg)(struct can2040 *cd)
 {
     cd->stats.rx_total++;
     cd->rx_cb(cd, CAN2040_NOTIFY_RX, &cd->parse_msg);
@@ -841,7 +841,7 @@ report_callback_rx_msg(struct can2040 *cd)
 
 // Report a message that was successfully transmited (via callback interface)
 static void
-report_callback_tx_msg(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_callback_tx_msg)(struct can2040 *cd)
 {
     writel(&cd->tx_pull_pos, cd->tx_pull_pos + 1);
     cd->stats.tx_total++;
@@ -850,7 +850,7 @@ report_callback_tx_msg(struct can2040 *cd)
 
 // EOF phase complete - report message (rx or tx) to calling code
 static void
-report_handle_eof(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_handle_eof)(struct can2040 *cd)
 {
     if (cd->report_state & RS_NEED_EOF_FLAG) { // RS_NEED_xX_EOF
         // Successfully processed a new message - report to calling code
@@ -866,21 +866,21 @@ report_handle_eof(struct can2040 *cd)
 
 // Check if message being processed is an rx message (not self feedback from tx)
 static int
-report_is_not_in_tx(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_is_not_in_tx)(struct can2040 *cd)
 {
     return !(cd->report_state & RS_NEED_TX_ACK);
 }
 
 // Parser found a new message start
 static void
-report_note_message_start(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_message_start)(struct can2040 *cd)
 {
     pio_irq_set(cd, SI_MAYTX);
 }
 
 // Setup for ack injection (if receiving) or ack confirmation (if transmit)
 static int
-report_note_crc_start(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_crc_start)(struct can2040 *cd)
 {
     int ret = tx_check_local_message(cd);
     if (ret) {
@@ -902,7 +902,7 @@ report_note_crc_start(struct can2040 *cd)
 
 // Parser successfully found matching crc
 static void
-report_note_crc_success(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_crc_success)(struct can2040 *cd)
 {
     if (cd->report_state == RS_NEED_TX_ACK)
         // Enable "matched" irq for fast back-to-back transmit scheduling
@@ -911,7 +911,7 @@ report_note_crc_success(struct can2040 *cd)
 
 // Parser found successful ack
 static void
-report_note_ack_success(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_ack_success)(struct can2040 *cd)
 {
     if (cd->report_state == RS_IDLE)
         // Got "matched" signal already
@@ -922,7 +922,7 @@ report_note_ack_success(struct can2040 *cd)
 
 // Parser found successful EOF
 static void
-report_note_eof_success(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_eof_success)(struct can2040 *cd)
 {
     if (cd->report_state == RS_IDLE)
         // Got "matched" signal already
@@ -933,7 +933,7 @@ report_note_eof_success(struct can2040 *cd)
 
 // Parser found unexpected data on input
 static void
-report_note_discarding(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_note_discarding)(struct can2040 *cd)
 {
     if (cd->report_state != RS_IDLE) {
         cd->report_state = RS_IDLE;
@@ -945,7 +945,7 @@ report_note_discarding(struct can2040 *cd)
 
 // Received PIO rx "ackdone" irq
 static void
-report_line_ackdone(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_line_ackdone)(struct can2040 *cd)
 {
     // Setup "matched" irq for fast rx callbacks
     uint32_t bits = (cd->parse_crc_bits << 8) | 0x7f;
@@ -957,7 +957,7 @@ report_line_ackdone(struct can2040 *cd)
 
 // Received PIO "matched" irq
 static void
-report_line_matched(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_line_matched)(struct can2040 *cd)
 {
     // A match event indicates an ack and eof are present
     if (cd->report_state != RS_IDLE) {
@@ -972,7 +972,7 @@ report_line_matched(struct can2040 *cd)
 
 // Received 10+ passive bits on the line (between 10 and 17 bits)
 static void
-report_line_maytx(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_line_maytx)(struct can2040 *cd)
 {
     // Line is idle - may be unexpected EOF, missed ack injection,
     // or missed "matched" signal.
@@ -984,7 +984,7 @@ report_line_maytx(struct can2040 *cd)
 
 // Schedule a transmit
 static void
-report_line_txpending(struct can2040 *cd)
+CAN2040_ISR_FUNC(report_line_txpending)(struct can2040 *cd)
 {
     uint32_t pio_irqs = pio_irq_get(cd);
     if (pio_irqs == (SI_MAYTX | SI_TXPENDING | SI_RX_DATA)
@@ -1014,14 +1014,14 @@ enum {
 
 // Reset any bits in the incoming parsing state
 static void
-data_state_clear_bits(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_clear_bits)(struct can2040 *cd)
 {
     cd->raw_bit_count = cd->unstuf.stuffed_bits = cd->unstuf.count_stuff = 0;
 }
 
 // Transition to the next parsing state
 static void
-data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
+CAN2040_ISR_FUNC(data_state_go_next)(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 {
     cd->parse_state = state;
     unstuf_set_count(&cd->unstuf, num_bits);
@@ -1029,7 +1029,7 @@ data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 
 // Transition to the MS_DISCARD state - drop all bits until 6 passive bits
 static void
-data_state_go_discard(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_go_discard)(struct can2040 *cd)
 {
     if (pio_rx_check_stall(cd)) {
         // CPU couldn't keep up for some read data - must reset pio state
@@ -1046,7 +1046,7 @@ data_state_go_discard(struct can2040 *cd)
 
 // Note a data parse error and transition to discard state
 static void
-data_state_go_error(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_go_error)(struct can2040 *cd)
 {
     cd->stats.parse_error++;
     data_state_go_discard(cd);
@@ -1054,7 +1054,7 @@ data_state_go_error(struct can2040 *cd)
 
 // Received six dominant bits on the line
 static void
-data_state_line_error(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_line_error)(struct can2040 *cd)
 {
     if (cd->parse_state == MS_DISCARD)
         data_state_go_discard(cd);
@@ -1064,7 +1064,7 @@ data_state_line_error(struct can2040 *cd)
 
 // Received six unexpected passive bits on the line
 static void
-data_state_line_passive(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_line_passive)(struct can2040 *cd)
 {
     if (cd->parse_state != MS_DISCARD && cd->parse_state != MS_START) {
         // Bitstuff error
@@ -1093,7 +1093,7 @@ data_state_line_passive(struct can2040 *cd)
 
 // Transition to MS_CRC state - await 16 bits of crc
 static void
-data_state_go_crc(struct can2040 *cd)
+CAN2040_ISR_FUNC(data_state_go_crc)(struct can2040 *cd)
 {
     cd->parse_crc &= 0x7fff;
 
@@ -1114,7 +1114,7 @@ data_state_go_crc(struct can2040 *cd)
 
 // Transition to MS_DATA0 state (if applicable) - await data bits
 static void
-data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
+CAN2040_ISR_FUNC(data_state_go_data)(struct can2040 *cd, uint32_t id, uint32_t data)
 {
     if (data & (0x03 << 4)) {
         // Not a supported header
@@ -1137,7 +1137,7 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 
 // Handle reception of first bit of header (after start-of-frame (SOF))
 static void
-data_state_update_start(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_start)(struct can2040 *cd, uint32_t data)
 {
     cd->parse_msg.id = data;
     report_note_message_start(cd);
@@ -1146,7 +1146,7 @@ data_state_update_start(struct can2040 *cd, uint32_t data)
 
 // Handle reception of next 17 header bits
 static void
-data_state_update_header(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_header)(struct can2040 *cd, uint32_t data)
 {
     data |= cd->parse_msg.id << 17;
     if ((data & 0x60) == 0x60) {
@@ -1161,7 +1161,7 @@ data_state_update_header(struct can2040 *cd, uint32_t data)
 
 // Handle reception of additional 20 bits of "extended header"
 static void
-data_state_update_ext_header(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_ext_header)(struct can2040 *cd, uint32_t data)
 {
     uint32_t hdr1 = cd->parse_msg.id;
     uint32_t crc = crc_bytes(0, hdr1 >> 4, 2);
@@ -1173,7 +1173,7 @@ data_state_update_ext_header(struct can2040 *cd, uint32_t data)
 
 // Handle reception of first 1-4 bytes of data content
 static void
-data_state_update_data0(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_data0)(struct can2040 *cd, uint32_t data)
 {
     uint32_t dlc = cd->parse_msg.dlc, bits = dlc >= 4 ? 32 : dlc * 8;
     cd->parse_crc = crc_bytes(cd->parse_crc, data, dlc);
@@ -1186,7 +1186,7 @@ data_state_update_data0(struct can2040 *cd, uint32_t data)
 
 // Handle reception of bytes 5-8 of data content
 static void
-data_state_update_data1(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_data1)(struct can2040 *cd, uint32_t data)
 {
     uint32_t dlc = cd->parse_msg.dlc, bits = dlc >= 8 ? 32 : (dlc - 4) * 8;
     cd->parse_crc = crc_bytes(cd->parse_crc, data, dlc - 4);
@@ -1196,7 +1196,7 @@ data_state_update_data1(struct can2040 *cd, uint32_t data)
 
 // Handle reception of 16 bits of message CRC (15 crc bits + crc delimiter)
 static void
-data_state_update_crc(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_crc)(struct can2040 *cd, uint32_t data)
 {
     if (((cd->parse_crc << 1) | 1) != data) {
         data_state_go_error(cd);
@@ -1210,7 +1210,7 @@ data_state_update_crc(struct can2040 *cd, uint32_t data)
 
 // Handle reception of 2 bits of ack phase (ack, ack delimiter)
 static void
-data_state_update_ack(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_ack)(struct can2040 *cd, uint32_t data)
 {
     if (data != 0x01) {
         // Undo unstuf_clear_state() for correct SOF detection in
@@ -1226,7 +1226,7 @@ data_state_update_ack(struct can2040 *cd, uint32_t data)
 
 // Handle reception of first four end-of-frame (EOF) bits
 static void
-data_state_update_eof0(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_eof0)(struct can2040 *cd, uint32_t data)
 {
     if (data != 0x0f || pio_rx_check_stall(cd)) {
         data_state_go_error(cd);
@@ -1238,7 +1238,7 @@ data_state_update_eof0(struct can2040 *cd, uint32_t data)
 
 // Handle reception of end-of-frame (EOF) bits 5-7 and first two IFS bits
 static void
-data_state_update_eof1(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_eof1)(struct can2040 *cd, uint32_t data)
 {
     if (data == 0x1f) {
         // Success
@@ -1255,14 +1255,14 @@ data_state_update_eof1(struct can2040 *cd, uint32_t data)
 
 // Handle data received while in MS_DISCARD state
 static void
-data_state_update_discard(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update_discard)(struct can2040 *cd, uint32_t data)
 {
     data_state_go_discard(cd);
 }
 
 // Update parsing state after reading the bits of the current field
 static void
-data_state_update(struct can2040 *cd, uint32_t data)
+CAN2040_ISR_FUNC(data_state_update)(struct can2040 *cd, uint32_t data)
 {
     switch (cd->parse_state) {
     case MS_START: data_state_update_start(cd, data); break;
@@ -1285,7 +1285,7 @@ data_state_update(struct can2040 *cd, uint32_t data)
 
 // Process incoming data from PIO "rx" state machine
 static void
-process_rx(struct can2040 *cd, uint32_t rx_data)
+CAN2040_ISR_FUNC(process_rx)(struct can2040 *cd, uint32_t rx_data)
 {
     unstuf_add_bits(&cd->unstuf, rx_data, PIO_RX_WAKE_BITS);
     cd->raw_bit_count += PIO_RX_WAKE_BITS;
@@ -1312,7 +1312,7 @@ process_rx(struct can2040 *cd, uint32_t rx_data)
 
 // Main API irq notification function
 void
-can2040_pio_irq_handler(struct can2040 *cd)
+CAN2040_ISR_FUNC(can2040_pio_irq_handler)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t ints = pio_hw->ints0;
@@ -1345,7 +1345,7 @@ can2040_pio_irq_handler(struct can2040 *cd)
 
 // API function to check if transmit space available
 int
-can2040_check_transmit(struct can2040 *cd)
+CAN2040_ISR_FUNC(can2040_check_transmit)(struct can2040 *cd)
 {
     uint32_t tx_pull_pos = readl(&cd->tx_pull_pos);
     uint32_t tx_push_pos = cd->tx_push_pos;
@@ -1355,7 +1355,7 @@ can2040_check_transmit(struct can2040 *cd)
 
 // API function to transmit a message
 int
-can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
+CAN2040_ISR_FUNC(can2040_transmit)(struct can2040 *cd, struct can2040_msg *msg)
 {
     uint32_t tx_pull_pos = readl(&cd->tx_pull_pos);
     uint32_t tx_push_pos = cd->tx_push_pos;
@@ -1426,7 +1426,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
 
 // API function to initialize can2040 code
 void
-can2040_setup(struct can2040 *cd, uint32_t pio_num)
+CAN2040_ISR_FUNC(can2040_setup)(struct can2040 *cd, uint32_t pio_num)
 {
     memset(cd, 0, sizeof(*cd));
     cd->pio_num = !!pio_num;
@@ -1441,7 +1441,7 @@ can2040_setup(struct can2040 *cd, uint32_t pio_num)
 
 // API function to configure callback
 void
-can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
+CAN2040_ISR_FUNC(can2040_callback_config)(struct can2040 *cd, can2040_rx_cb rx_cb)
 {
     cd->rx_cb = rx_cb;
 }
