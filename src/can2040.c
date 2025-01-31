@@ -62,7 +62,7 @@ CAN2040_ISR_FUNC(rp2040_clear_reset)(uint32_t reset_bit)
 
 // Helper to set the mode and extended function of a pin
 static void
-CAN2040_ISR_FUNC(rp2040_gpio_peripheral)(uint32_t gpio, int func, int pull_up)
+rp2040_gpio_peripheral(uint32_t gpio, int func, int pull_up)
 {
     padsbank0_hw->io[gpio] = (
         PADS_BANK0_GPIO0_IE_BITS
@@ -134,6 +134,14 @@ static const uint16_t can2040_program_instructions[] = {
 #define SI_RX_DATA   PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
 #define SI_TXPENDING PIO_IRQ0_INTE_SM1_BITS // Misc bit manually forced
 
+typedef enum PIO_STATE_MACHINE
+{
+	PSM_0 = 0,
+	PSM_1 = 1,
+	PSM_2 = 2,
+	PSM_3 = 3,
+};
+
 // Return the gpio bank offset (on rp2350 chips)
 static uint32_t
 pio_gpiobase(struct can2040 *cd)
@@ -148,7 +156,7 @@ static void
 pio_sync_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[0];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_0];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
         gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
@@ -169,7 +177,7 @@ static void
 pio_rx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[1];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_1];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
         (can2040_offset_shared_rx_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
@@ -187,7 +195,7 @@ static void
 pio_match_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[2];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_2];
     sm->execctrl = (
         (can2040_offset_match_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_shared_rx_read << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
@@ -205,7 +213,7 @@ static void
 pio_tx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_3];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     uint32_t gpio_tx = (cd->gpio_tx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
@@ -258,7 +266,7 @@ CAN2040_ISR_FUNC(pio_match_check)(struct can2040 *cd, uint32_t match_key)
 
 // Calculate pos+bits identifier for PIO "match" state machine
 static uint32_t
-pio_match_calc_key(uint32_t raw_bits, uint32_t rx_bit_pos)
+CAN2040_ISR_FUNC(pio_match_calc_key)(uint32_t raw_bits, uint32_t rx_bit_pos)
 {
     return (raw_bits & 0x1fffff) | ((-rx_bit_pos) << 21);
 }
@@ -280,7 +288,7 @@ CAN2040_ISR_FUNC(pio_tx_reset)(struct can2040 *cd)
                     | (0x08 << PIO_CTRL_SM_RESTART_LSB));
     pio_hw->irq = (SI_MATCHED | SI_ACKDONE) >> 8; // clear PIO irq flags
     // Clear tx fifo
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_3];
     sm->shiftctrl = 0;
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
@@ -296,7 +304,7 @@ CAN2040_ISR_FUNC(pio_tx_send)(struct can2040 *cd, uint32_t *data, uint32_t count
     uint32_t i;
     for (i=0; i<count; i++)
         pio_hw->txf[3] = data[i];
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_3];
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0x6021; // out x, 1
     sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
@@ -312,7 +320,7 @@ CAN2040_ISR_FUNC(pio_tx_inject_ack)(struct can2040 *cd, uint32_t match_key)
     pio_tx_reset(cd);
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xc023; // irq wait 3
     pio_hw->txf[3] = 0x7fffffff;
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[PSM_3];
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0x6021; // out x, 1
     sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
@@ -328,7 +336,7 @@ CAN2040_ISR_FUNC(pio_tx_did_fail)(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     // Check for passive/dominant bit conflict without parser noticing
-    if (pio_hw->sm[3].addr == can2040_offset_tx_conflict)
+    if (pio_hw->sm[PSM_3].addr == can2040_offset_tx_conflict)
         return !(pio_hw->intr & SI_RX_DATA);
     // Check for unexpected drain of transmit queue without parser noticing
     return (!(pio_hw->flevel & PIO_FLEVEL_TX3_BITS)
@@ -403,7 +411,7 @@ CAN2040_ISR_FUNC(pio_sm_setup)(struct can2040 *cd)
 
 // Initial setup of gpio pins and PIO state machines
 static void
-CAN2040_ISR_FUNC(pio_setup)(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
+pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
 {
     // Configure pio0 clock
     uint32_t rb = cd->pio_num ? RESETS_RESET_PIO1_BITS : RESETS_RESET_PIO0_BITS;
@@ -440,7 +448,7 @@ CAN2040_ISR_FUNC(pio_setup)(struct can2040 *cd, uint32_t sys_clock, uint32_t bit
  ****************************************************************/
 
 // Calculated 8-bit crc table (see scripts/crc.py)
-static const uint16_t crc_table[256] = {
+static const uint16_t CAN2040_ISR_FUNC(crc_table)[256] = {
     0x0000,0x4599,0x4eab,0x0b32,0x58cf,0x1d56,0x1664,0x53fd,0x7407,0x319e,
     0x3aac,0x7f35,0x2cc8,0x6951,0x6263,0x27fa,0x2d97,0x680e,0x633c,0x26a5,
     0x7558,0x30c1,0x3bf3,0x7e6a,0x5990,0x1c09,0x173b,0x52a2,0x015f,0x44c6,
@@ -471,7 +479,7 @@ static const uint16_t crc_table[256] = {
 
 // Update a crc with 8 bits of data
 static uint32_t
-crc_byte(uint32_t crc, uint32_t data)
+CAN2040_ISR_FUNC(crc_byte)(uint32_t crc, uint32_t data)
 {
     return (crc << 8) ^ crc_table[((crc >> 7) ^ data) & 0xff];
 }
@@ -495,7 +503,7 @@ crc_bytes(uint32_t crc, uint32_t data, uint32_t num)
  ****************************************************************/
 
 // Add 'count' number of bits from 'data' to the 'bu' unstuffer
-static void
+static inline void
 unstuf_add_bits(struct can2040_bitunstuffer *bu, uint32_t data, uint32_t count)
 {
     uint32_t mask = (1 << count) - 1;
@@ -504,7 +512,7 @@ unstuf_add_bits(struct can2040_bitunstuffer *bu, uint32_t data, uint32_t count)
 }
 
 // Reset state and set the next desired 'num_bits' unstuffed bits to extract
-static void
+static inline void
 unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t num_bits)
 {
     bu->unstuffed_bits = 0;
@@ -513,7 +521,7 @@ unstuf_set_count(struct can2040_bitunstuffer *bu, uint32_t num_bits)
 
 // Clear bitstuffing state (used after crc field to avoid bitstuffing ack field)
 static void
-unstuf_clear_state(struct can2040_bitunstuffer *bu)
+CAN2040_ISR_FUNC(unstuf_clear_state)(struct can2040_bitunstuffer *bu)
 {
     uint32_t lb = 1 << bu->count_stuff;
     bu->stuffed_bits = (bu->stuffed_bits & (lb - 1)) | (lb << 1);
@@ -521,15 +529,16 @@ unstuf_clear_state(struct can2040_bitunstuffer *bu)
 
 // Restore raw bitstuffing state (used to undo unstuf_clear_state() )
 static void
-unstuf_restore_state(struct can2040_bitunstuffer *bu, uint32_t data)
+CAN2040_ISR_FUNC(unstuf_restore_state)(struct can2040_bitunstuffer *bu, uint32_t data)
 {
     uint32_t cs = bu->count_stuff;
     bu->stuffed_bits = (bu->stuffed_bits & ((1 << cs) - 1)) | (data << cs);
 }
 
+#if (!IS_RP2350)
 // Pull bits from unstuffer (as specified in unstuf_set_count() )
-static int
-unstuf_pull_bits_rp2040(struct can2040_bitunstuffer *bu)
+static inline int
+unstuf_pull_bits(struct can2040_bitunstuffer *bu)
 {
     uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
     uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
@@ -572,13 +581,11 @@ unstuf_pull_bits_rp2040(struct can2040_bitunstuffer *bu)
             return 1;
     }
 }
-
+#else
 // Pull bits from unstuffer (optimized for rp2350)
-static int
+static inline int
 unstuf_pull_bits(struct can2040_bitunstuffer *bu)
 {
-    if (!IS_RP2350)
-        return unstuf_pull_bits_rp2040(bu);
     uint32_t sb = bu->stuffed_bits, edges = sb ^ (sb >> 1);
     uint32_t e2 = edges | (edges >> 1), e4 = e2 | (e2 >> 2), rm_bits = ~e4;
     uint32_t cs = bu->count_stuff, cu = bu->count_unstuff;
@@ -615,9 +622,10 @@ unstuf_pull_bits(struct can2040_bitunstuffer *bu)
         }
     }
 }
+#endif
 
 // Return most recent raw (still stuffed) bits
-static uint32_t
+static inline uint32_t
 unstuf_get_raw(struct can2040_bitunstuffer *bu)
 {
     return bu->stuffed_bits >> bu->count_stuff;
@@ -629,8 +637,9 @@ unstuf_get_raw(struct can2040_bitunstuffer *bu)
  ****************************************************************/
 
 // Stuff 'num_bits' bits in '*pb' - upper bits must already be stuffed
+#if (!IS_RP2350)
 static uint32_t
-bitstuff_rp2040(uint32_t *pb, uint32_t num_bits)
+bitstuff(uint32_t *pb, uint32_t num_bits)
 {
     uint32_t b = *pb, count = num_bits;
     for (;;) {
@@ -666,13 +675,11 @@ done:
     *pb = b;
     return count;
 }
-
+#else
 // Stuff 'num_bits' bits in '*pb' (optimized for rp2350)
 static uint32_t
 bitstuff(uint32_t *pb, uint32_t num_bits)
 {
-    if (!IS_RP2350)
-        return bitstuff_rp2040(pb, num_bits);
     uint32_t b = *pb, count = num_bits;
     for (;;) {
         uint32_t edges = b ^ (b >> 1);
@@ -694,6 +701,7 @@ bitstuff(uint32_t *pb, uint32_t num_bits)
     *pb = b;
     return count;
 }
+#endif
 
 // State storage for building bit stuffed transmit messages
 struct bitstuffer_s {
@@ -702,7 +710,7 @@ struct bitstuffer_s {
 
 // Push 'count' bits of 'data' into stuffer without performing bit stuffing
 static void
-bs_pushraw(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
+CAN2040_ISR_FUNC(bs_pushraw)(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 {
     uint32_t bitpos = bs->bitpos;
     uint32_t wp = bitpos / 32, bitused = bitpos % 32, bitavail = 32 - bitused;
@@ -718,7 +726,7 @@ bs_pushraw(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 
 // Push 'count' bits of 'data' into stuffer
 static void
-bs_push(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
+CAN2040_ISR_FUNC(bs_push)(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 {
     data &= (1 << count) - 1;
     uint32_t stuf = (bs->prev_stuffed << count) | data;
@@ -728,7 +736,7 @@ bs_push(struct bitstuffer_s *bs, uint32_t data, uint32_t count)
 }
 
 // Pad final word of stuffer with high bits
-static uint32_t
+static inline uint32_t
 bs_finalize(struct bitstuffer_s *bs)
 {
     uint32_t bitpos = bs->bitpos;
@@ -1426,7 +1434,7 @@ CAN2040_ISR_FUNC(can2040_transmit)(struct can2040 *cd, struct can2040_msg *msg)
 
 // API function to initialize can2040 code
 void
-CAN2040_ISR_FUNC(can2040_setup)(struct can2040 *cd, uint32_t pio_num)
+can2040_setup(struct can2040 *cd, uint32_t pio_num)
 {
     memset(cd, 0, sizeof(*cd));
     cd->pio_num = !!pio_num;
@@ -1441,7 +1449,7 @@ CAN2040_ISR_FUNC(can2040_setup)(struct can2040 *cd, uint32_t pio_num)
 
 // API function to configure callback
 void
-CAN2040_ISR_FUNC(can2040_callback_config)(struct can2040 *cd, can2040_rx_cb rx_cb)
+can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
 {
     cd->rx_cb = rx_cb;
 }
