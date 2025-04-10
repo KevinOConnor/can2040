@@ -21,6 +21,34 @@ If compiling for the rp2350 then pico_sdk version 2.0.0 or later is
 required and the compiler flags must include `-DPICO_RP2350` (the
 pico-sdk build rules typically provide this definition).
 
+If compiling using the VSCode-provided CMake configuration, add a `CMakeLists.txt` in the directory containing the can2040 source code:
+
+```cmake
+add_library(can2040
+    can2040.h
+    can2040.c
+)
+
+target_link_libraries(can2040
+    pico_stdlib
+    hardware_resets
+    cmsis_core
+    )
+
+target_include_directories(can2040 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+```
+
+Then, add the library to the top-level `CMakeLists.txt`:
+
+```cmake
+add_subdirectory(can2040)
+target_link_libraries(<executable>
+    # other libraries
+    can2040
+    )
+```
+
 # Startup
 
 The following provides example startup C code for can2040:
@@ -52,9 +80,9 @@ canbus_setup(void)
     can2040_callback_config(&cbus, can2040_cb);
 
     // Enable irqs
-    irq_set_exclusive_handler(PIO0_IRQ_0_IRQn, PIOx_IRQHandler);
-    NVIC_SetPriority(PIO0_IRQ_0_IRQn, 1);
-    NVIC_EnableIRQ(PIO0_IRQ_0_IRQn);
+    irq_set_exclusive_handler(PIO0_IRQ_0, PIOx_IRQHandler);
+    irq_set_priority(PIO0_IRQ_0, 1);
+    irq_set_enabled(PIO0_IRQ_0, 1)
 
     // Start canbus
     can2040_start(&cbus, sys_clock, bitrate, gpio_rx, gpio_tx);
