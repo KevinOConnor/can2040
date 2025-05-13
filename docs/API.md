@@ -15,7 +15,7 @@ The code depends on a few files from the
 [pico sdk](https://github.com/raspberrypi/pico-sdk.git) (version
 1.3.0 or later) that must be in the include path when compiling
 can2040.  For example:
-`arm-none-eabi-gcc -O2 -I/path/to/sdk/src/rp2040/ -I/path/to/sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RaspberryPi/RP2040/Include/ ...`
+`arm-none-eabi-gcc -O2 -I/path/to/sdk/src/rp2040/ ...`
 
 If compiling for the rp2350 then pico_sdk version 2.0.0 or later is
 required and the compiler flags must include `-DPICO_RP2350` (the

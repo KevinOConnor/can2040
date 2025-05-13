@@ -1,13 +1,12 @@
 // Software CANbus implementation for rp2040
 //
-// Copyright (C) 2022-2024  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2022-2025  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
 #include <stdint.h> // uint32_t
 #include <string.h> // memset
 #include "can2040.h" // can2040_setup
-#include "cmsis_gcc.h" // __DMB
 #include "hardware/regs/dreq.h" // DREQ_PIO0_RX1
 #include "hardware/structs/dma.h" // dma_hw
 #include "hardware/structs/iobank0.h" // iobank0_hw
@@ -33,6 +32,7 @@
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
+#define __DMB() __asm__ __volatile__("dmb 0xF": : :"memory")
 
 // Helper functions for writing to "io" memory
 static inline void writel(void *addr, uint32_t val) {
