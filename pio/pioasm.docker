@@ -6,7 +6,7 @@
 # And then one could assemble the can2040.pio file with something like:
 #   docker run --rm -it -v ./pio:/project localhost/pioasm /project/can2040.pio
 
-FROM ubuntu:20.04 as base
+FROM ubuntu:22.04 as base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -15,7 +15,7 @@ RUN apt update && apt install -y \
     cmake \
     git
 
-RUN cd ~ && git clone --depth 1 --branch 1.3.1 https://github.com/raspberrypi/pico-sdk.git
+RUN cd ~ && git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git
 
 RUN mkdir ~/piobuild && cd ~/piobuild \
     && cmake ~/pico-sdk/tools/pioasm \
