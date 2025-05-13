@@ -5,21 +5,26 @@ file](../COPYING) for more information.
 
 # Compiling
 
-The can2040 code is intended to be compiled using the "gcc" C
-compiler. The can2040 implementation is contained in the
+It is possible to use the standard
+[pico sdk](https://github.com/raspberrypi/pico-sdk.git) to build and
+deploy can2040 based applications.  See the
+[example directory](../example/) for a demo application and its
+corresponding cmake rules.
+
+The can2040 code can also be used in environments that do not utilize
+the full pico sdk.  The can2040 implementation is contained in the
 [can2040.c](../src/can2040.c) and [can2040.h](../src/can2040.h) C
-files.  The code is intended to be compiled at `-O2` (or higher)
+files.  The can2040 code should be compiled using the "gcc" C
+compiler.  The code is intended to be compiled at `-O2` (or higher)
 optimization.
 
-The code depends on a few files from the
-[pico sdk](https://github.com/raspberrypi/pico-sdk.git) (version
-1.3.0 or later) that must be in the include path when compiling
-can2040.  For example:
+Even when not using the full sdk, the code will require a few files
+from the [pico sdk](https://github.com/raspberrypi/pico-sdk.git) that
+must be in the include path when compiling can2040 (sdk version 1.3.0
+or later is required).  For example:
 `arm-none-eabi-gcc -O2 -I/path/to/sdk/src/rp2040/ ...`
-
-If compiling for the rp2350 then pico_sdk version 2.0.0 or later is
-required and the compiler flags must include `-DPICO_RP2350` (the
-pico-sdk build rules typically provide this definition).
+If compiling for the rp2350 then pico sdk version 2.0.0 or later is
+required and the compiler flags must include `-DPICO_RP2350`.
 
 # Startup
 
