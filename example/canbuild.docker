@@ -1,0 +1,19 @@
+# This dockerfile is a reference for building and running a container
+# utilizing the Raspberry Pi pico-sdk.
+#
+# Typically one would build the container with something like:
+#   docker build -t canbuild -f example/canbuild.docker
+# And then one could generate the canexample.uf2 file with something like:
+#   mkdir build
+#   docker run --rm -it -v ./example:/root/example -v ./src:/root/src -v ./build:/root/build -w /root/build localhost/canbuild /bin/bash -c 'cmake -D PICO_SDK_PATH=../pico-sdk -D PICO_BOARD=pico ../example && make'
+
+FROM ubuntu:22.04 as base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && apt install -y \
+    cmake python3 build-essential gcc-arm-none-eabi \
+    libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+    git
+
+RUN cd ~ && git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git && cd pico-sdk && git submodule update --init
