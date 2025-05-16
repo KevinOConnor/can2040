@@ -3,6 +3,30 @@
 
 #include <stdint.h> // uint32_t
 
+////////////////////////////////////////////////////////////////////////////////////
+// CAN2040_ISR_IN_RAM
+// set compiler define CAN2040_ISR_IN_RAM=1 to place all functions in the ISR path 
+// in RAM. This dramatically improves ISR execution times.
+//
+// You should also place all of your own user code in ram that is in the ISR path.
+// EG:
+// static void CAN2040_ISR_FUNC(can2040_cb)(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
+// {
+//     .. your callback code ..
+// }
+//
+// static void CAN2040_ISR_FUNC(PIOx_IRQHandler)(void)
+// {
+//     can2040_pio_irq_handler(&cbus);
+// }
+////////////////////////////////////////////////////////////////////////////////////
+
+#if CAN2040_ISR_IN_RAM
+#define CAN2040_ISR_FUNC(func_name) __not_in_flash(__STRING(func_name)) func_name
+#else
+#define CAN2040_ISR_FUNC(func_name) func_name
+#endif
+
 struct can2040_msg {
     uint32_t id;
     uint32_t dlc;
