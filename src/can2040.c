@@ -130,6 +130,9 @@ static const uint16_t can2040_program_instructions[] = {
 #define SI_RX_DATA   PIO_IRQ0_INTE_SM1_RXNEMPTY_BITS
 #define SI_TXPENDING PIO_IRQ0_INTE_SM1_BITS // Misc bit manually forced
 
+// Local names of the four PIO state machines
+enum { SM_SYNC = 0, SM_RX = 1, SM_MATCH = 2, SM_TX = 3 };
+
 // Return the gpio bank offset (on rp2350 chips)
 static uint32_t
 pio_gpiobase(struct can2040 *cd)
@@ -144,7 +147,7 @@ static void
 pio_sync_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[0];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_SYNC];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
         gpio_rx << PIO_SM0_EXECCTRL_JMP_PIN_LSB
@@ -155,7 +158,7 @@ pio_sync_setup(struct can2040 *cd)
         | gpio_rx << PIO_SM0_PINCTRL_SET_BASE_LSB);
     sm->instr = 0xe080; // set pindirs, 0
     sm->pinctrl = 0;
-    pio_hw->txf[0] = 9 + 6 * PIO_CLOCK_PER_BIT / 2;
+    pio_hw->txf[SM_SYNC] = 9 + 6 * PIO_CLOCK_PER_BIT / 2;
     sm->instr = 0x80a0; // pull block
     sm->instr = can2040_offset_sync_entry; // jmp sync_entry
 }
@@ -165,7 +168,7 @@ static void
 pio_rx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[1];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_RX];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
         (can2040_offset_shared_rx_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
@@ -183,7 +186,7 @@ static void
 pio_match_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[2];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_MATCH];
     sm->execctrl = (
         (can2040_offset_match_end - 1) << PIO_SM0_EXECCTRL_WRAP_TOP_LSB
         | can2040_offset_shared_rx_read << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
@@ -201,7 +204,7 @@ static void
 pio_tx_setup(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_TX];
     uint32_t gpio_rx = (cd->gpio_rx - pio_gpiobase(cd)) & 0x1f;
     uint32_t gpio_tx = (cd->gpio_tx - pio_gpiobase(cd)) & 0x1f;
     sm->execctrl = (
@@ -249,7 +252,7 @@ static void
 pio_match_check(struct can2040 *cd, uint32_t match_key)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
-    pio_hw->txf[2] = match_key;
+    pio_hw->txf[SM_MATCH] = match_key;
 }
 
 // Calculate pos+bits identifier for PIO "match" state machine
@@ -276,7 +279,7 @@ pio_tx_reset(struct can2040 *cd)
                     | (0x08 << PIO_CTRL_SM_RESTART_LSB));
     pio_hw->irq = (SI_MATCHED | SI_ACKDONE) >> 8; // clear PIO irq flags
     // Clear tx fifo
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_TX];
     sm->shiftctrl = 0;
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
@@ -291,8 +294,8 @@ pio_tx_send(struct can2040 *cd, uint32_t *data, uint32_t count)
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0x6021; // out x, 1
     uint32_t i;
     for (i=0; i<count; i++)
-        pio_hw->txf[3] = data[i];
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+        pio_hw->txf[SM_TX] = data[i];
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_TX];
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0x6021; // out x, 1
     sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
@@ -307,8 +310,8 @@ pio_tx_inject_ack(struct can2040 *cd, uint32_t match_key)
     pio_hw_t *pio_hw = cd->pio_hw;
     pio_tx_reset(cd);
     pio_hw->instr_mem[can2040_offset_tx_got_recessive] = 0xc023; // irq wait 3
-    pio_hw->txf[3] = 0x7fffffff;
-    pio_sm_hw_t *sm = &pio_hw->sm[3];
+    pio_hw->txf[SM_TX] = 0x7fffffff;
+    pio_sm_hw_t *sm = &pio_hw->sm[SM_TX];
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0x6021; // out x, 1
     sm->instr = can2040_offset_tx_write_pin; // jmp tx_write_pin
@@ -324,7 +327,7 @@ pio_tx_did_fail(struct can2040 *cd)
 {
     pio_hw_t *pio_hw = cd->pio_hw;
     // Check for passive/dominant bit conflict without parser noticing
-    if (pio_hw->sm[3].addr == can2040_offset_tx_conflict)
+    if (pio_hw->sm[SM_TX].addr == can2040_offset_tx_conflict)
         return !(pio_hw->intr & SI_RX_DATA);
     // Check for unexpected drain of transmit queue without parser noticing
     return (!(pio_hw->flevel & PIO_FLEVEL_TX3_BITS)
@@ -1313,7 +1316,7 @@ can2040_pio_irq_handler(struct can2040 *cd)
     pio_hw_t *pio_hw = cd->pio_hw;
     uint32_t ints = pio_hw->ints0;
     while (likely(ints & SI_RX_DATA)) {
-        uint32_t rx_data = pio_hw->rxf[1];
+        uint32_t rx_data = pio_hw->rxf[SM_RX];
         process_rx(cd, rx_data);
         ints = pio_hw->ints0;
         if (likely(!ints))
