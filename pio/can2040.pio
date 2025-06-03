@@ -126,7 +126,7 @@ tx_align:
 .program sm_tx_ack
     // CPU first disables state machine execution
     // CPU clears irq 2 and irq 3
-    // CPU changes instruction at tx_loop from "out x, 1" to:
+    // CPU changes instruction at tx_got_recessive from "out x, 1" to:
     irq wait 3
     // CPU then loads tx fifo with ack (single off bit)
     set pins, 1

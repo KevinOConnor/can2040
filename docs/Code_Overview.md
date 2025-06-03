@@ -90,7 +90,8 @@ A secondary task of the PIO "tx" state machine is to inject an ack bit
 to acknowledge messages received from other CAN bus nodes.  To perform
 this task, the ARM core fills the tx fifo with a single dominant bit
 and arranges for the "tx" state machine to start after a "matched"
-irq.
+irq.  After the ack bit is transmitted the PIO "tx" state machine will
+raise an "ackdone" signal (PIO irq 3).
 
 # ARM core state tracking
 

@@ -942,11 +942,11 @@ report_note_discarding(struct can2040 *cd)
     pio_irq_set(cd, SI_MAYTX | SI_TXPENDING);
 }
 
-// Received PIO rx "ackdone" irq
+// Received PIO "ackdone" irq ("tx" state machine completed ack bit transmit)
 static void
 report_line_ackdone(struct can2040 *cd)
 {
-    // Setup "matched" irq for fast rx callbacks
+    // Setup rx eof "matched" signal for fast rx callbacks
     uint32_t bits = (cd->parse_crc_bits << 8) | 0x7f;
     pio_match_check(cd, pio_match_calc_key(bits, cd->parse_crc_pos + 8));
     // Schedule next transmit (so it is ready for next frame line arbitration)
@@ -954,7 +954,7 @@ report_line_ackdone(struct can2040 *cd)
     pio_irq_set(cd, SI_MAYTX | SI_MATCHED | check_txpending);
 }
 
-// Received PIO "matched" irq
+// Received PIO "matched" irq ("match" state machine detected eof match_key)
 static void
 report_line_matched(struct can2040 *cd)
 {
