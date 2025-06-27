@@ -66,6 +66,7 @@ struct can2040 {
     void *pio_hw;
     uint32_t gpio_rx, gpio_tx;
     can2040_rx_cb rx_cb;
+    void *rx_cb_user_data;
     struct can2040_stats stats;
 
     // Bit unstuffing
