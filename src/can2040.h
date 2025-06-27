@@ -1,3 +1,6 @@
+// Copyright (C) 2022-2025  Kevin O'Connor <kevin@koconnor.net>
+// SPDX-License-Identifier: GPL-3.0-only
+
 #ifndef _CAN2040_H
 #define _CAN2040_H
 

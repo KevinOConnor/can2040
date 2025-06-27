@@ -3,6 +3,7 @@
 // Copyright (C) 2022-2025  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <stdint.h> // uint32_t
 #include <string.h> // memset
