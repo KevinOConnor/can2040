@@ -29,11 +29,16 @@
 
 // Helper compiler definitions
 #define barrier() __asm__ __volatile__("": : :"memory")
+#define __DMB() __asm__ __volatile__("dmb 0xF": : :"memory")
+
+// Zephyr already defines these helpers
+// Avoid redefinition warnings
+#ifndef __ZEPHYR__
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
-#define __DMB() __asm__ __volatile__("dmb 0xF": : :"memory")
+#endif
 
 // Helper functions for writing to "io" memory
 static inline void writel(void *addr, uint32_t val) {
