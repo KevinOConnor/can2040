@@ -1,3 +1,6 @@
+// Copyright (C) 2022-2025  Kevin O'Connor <kevin@koconnor.net>
+// SPDX-License-Identifier: GPL-3.0-only
+
 #ifndef _CAN2040_H
 #define _CAN2040_H
 
@@ -63,6 +66,7 @@ struct can2040 {
     void *pio_hw;
     uint32_t gpio_rx, gpio_tx;
     can2040_rx_cb rx_cb;
+    void *rx_cb_user_data;
     struct can2040_stats stats;
 
     // Bit unstuffing
