@@ -380,9 +380,18 @@ pio_signal_clear_txpending(struct can2040 *cd)
     pio_hw->irq = SI_TXPENDING >> 8;
 }
 
+void
+can2040_ll_pio_set_clkdiv(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
+{
+    pio_hw_t *pio_hw = cd->pio_hw;
+    uint32_t div = (256 / PIO_CLOCK_PER_BIT) * sys_clock / bitrate;
+    int i;
+    for (i=0; i<4; i++)
+        pio_hw->sm[i].clkdiv = div << PIO_SM0_CLKDIV_FRAC_LSB;
+}
+
 // Setup PIO state machines
-static void
-pio_sm_setup(struct can2040 *cd)
+void can2040_ll_pio_sm_setup(struct can2040 *cd)
 {
     // Reset state machines
     pio_hw_t *pio_hw = cd->pio_hw;
@@ -419,19 +428,16 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
     rp2040_clear_reset(rb);
 
     // Setup and sync pio state machine clocks
-    pio_hw_t *pio_hw = cd->pio_hw;
-    uint32_t div = (256 / PIO_CLOCK_PER_BIT) * sys_clock / bitrate;
-    int i;
-    for (i=0; i<4; i++)
-        pio_hw->sm[i].clkdiv = div << PIO_SM0_CLKDIV_FRAC_LSB;
+    can2040_ll_pio_set_clkdiv(cd, sys_clock, bitrate);
 
     // Configure gpiobase (on rp2350)
 #if IS_RP2350
+    pio_hw_t *pio_hw = cd->pio_hw;
     pio_hw->gpiobase = pio_gpiobase(cd);
 #endif
 
     // Configure state machines
-    pio_sm_setup(cd);
+    can2040_ll_pio_sm_setup(cd);
 
     // Map Rx/Tx gpios
     uint32_t pio_func = 6 + cd->pio_num;
@@ -1018,8 +1024,7 @@ enum {
 };
 
 // Reset any bits in the incoming parsing state
-static void
-data_state_clear_bits(struct can2040 *cd)
+void can2040_ll_data_state_clear_bits(struct can2040 *cd)
 {
     cd->raw_bit_count = cd->unstuf.stuffed_bits = cd->unstuf.count_stuff = 0;
 }
@@ -1033,13 +1038,12 @@ data_state_go_next(struct can2040 *cd, uint32_t state, uint32_t num_bits)
 }
 
 // Transition to the MS_DISCARD state - drop all bits until 6 passive bits
-static void
-data_state_go_discard(struct can2040 *cd)
+void can2040_ll_data_state_go_discard(struct can2040 *cd)
 {
     if (pio_rx_check_stall(cd)) {
         // CPU couldn't keep up for some read data - must reset pio state
-        data_state_clear_bits(cd);
-        pio_sm_setup(cd);
+        can2040_ll_data_state_clear_bits(cd);
+        can2040_ll_pio_sm_setup(cd);
         report_callback_error(cd, 0);
     }
 
@@ -1054,7 +1058,7 @@ static void
 data_state_go_error(struct can2040 *cd)
 {
     cd->stats.parse_error++;
-    data_state_go_discard(cd);
+    can2040_ll_data_state_go_discard(cd);
 }
 
 // Received six dominant bits on the line
@@ -1062,7 +1066,7 @@ static void
 data_state_line_error(struct can2040 *cd)
 {
     if (cd->parse_state == MS_DISCARD)
-        data_state_go_discard(cd);
+        can2040_ll_data_state_go_discard(cd);
     else
         data_state_go_error(cd);
 }
@@ -1081,9 +1085,9 @@ data_state_line_passive(struct can2040 *cd)
     uint32_t dom_bits = ~stuffed_bits;
     if (!dom_bits) {
         // Counter overflow in "sync" state machine - reset it
-        data_state_clear_bits(cd);
-        pio_sm_setup(cd);
-        data_state_go_discard(cd);
+        can2040_ll_data_state_clear_bits(cd);
+        can2040_ll_pio_sm_setup(cd);
+        can2040_ll_data_state_go_discard(cd);
         return;
     }
 
@@ -1093,7 +1097,7 @@ data_state_line_passive(struct can2040 *cd)
         return;
     }
 
-    data_state_go_discard(cd);
+    can2040_ll_data_state_go_discard(cd);
 }
 
 // Transition to MS_CRC state - await 16 bits of crc
@@ -1123,7 +1127,7 @@ data_state_go_data(struct can2040 *cd, uint32_t id, uint32_t data)
 {
     if (data & (0x03 << 4)) {
         // Not a supported header
-        data_state_go_discard(cd);
+        can2040_ll_data_state_go_discard(cd);
         return;
     }
     cd->parse_msg.data32[0] = cd->parse_msg.data32[1] = 0;
@@ -1252,7 +1256,7 @@ data_state_update_eof1(struct can2040 *cd, uint32_t data)
     } else if (data >= 0x1c || (data >= 0x18 && report_is_not_in_tx(cd))) {
         // Message fully transmitted - followed by "overload frame"
         report_note_eof_success(cd);
-        data_state_go_discard(cd);
+        can2040_ll_data_state_go_discard(cd);
     } else {
         data_state_go_error(cd);
     }
@@ -1262,7 +1266,7 @@ data_state_update_eof1(struct can2040 *cd, uint32_t data)
 static void
 data_state_update_discard(struct can2040 *cd, uint32_t data)
 {
-    data_state_go_discard(cd);
+    can2040_ll_data_state_go_discard(cd);
 }
 
 // Update parsing state after reading the bits of the current field
@@ -1458,9 +1462,9 @@ can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
 {
     cd->gpio_rx = gpio_rx;
     cd->gpio_tx = gpio_tx;
-    data_state_clear_bits(cd);
+    can2040_ll_data_state_clear_bits(cd);
     pio_setup(cd, sys_clock, bitrate);
-    data_state_go_discard(cd);
+    can2040_ll_data_state_go_discard(cd);
 }
 
 // API function to stop can2040 code
@@ -1468,7 +1472,7 @@ void
 can2040_stop(struct can2040 *cd)
 {
     pio_irq_disable(cd);
-    pio_sm_setup(cd);
+    can2040_ll_pio_sm_setup(cd);
 }
 
 // API function to access can2040 statistics
