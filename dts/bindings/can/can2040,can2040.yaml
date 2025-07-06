@@ -1,0 +1,53 @@
+# Copyright (c) 2025 Dmitrii Sharshakov <d3dx12.xx@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only OR Apache-2.0
+
+description: |
+  PIO-based CAN controller for RP2 series, using the can2040 driver
+
+  Example:
+    &pinctrl {
+      can2040_default: can2040_default {
+        rx_pins {
+          pinmux = <PIO0_P4>;
+          input-enable;
+          bias-pull-up;
+        };
+        tx_pins {
+          pinmux = <PIO0_P5>;
+        };
+      };
+    };
+
+    &pio0 {
+      status = "okay";
+
+      can2040: can2040 {
+        compatible = "can2040,can2040";
+        status = "okay";
+        clocks = <&clk_sys>;
+        clock-names = "sys";
+        pinctrl-0 = <&can2040_default>;
+        pinctrl-names = "default";
+        bitrate = <1000000>;
+      };
+    };
+
+compatible: "can2040,can2040"
+
+include: [can-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  clocks:
+    required: true
+
+  clock-names:
+    required: true
+
+  pinctrl-0:
+    required: true
+
+  pinctrl-names:
+    required: true
+
+  bitrate:
+    required: true

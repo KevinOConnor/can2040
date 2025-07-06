@@ -1,0 +1,23 @@
+# can2040 configuration options
+
+# Copyright (c) 2025 Dmitrii Sharshakov <d3dx12.xx@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only OR Apache-2.0
+
+config CAN_CAN2040
+	bool "can2040 PIO-based driver (out-of-tree)"
+	default y
+	depends on DT_HAS_CAN2040_CAN2040_ENABLED
+	help
+	  This enables support for can2040 CAN driver, based on RP2 PIO, using an external library.
+
+if CAN_CAN2040
+
+config CAN_MAX_FILTER
+	int "Maximum number of concurrent active filters"
+	default 16
+	range 1 1024
+	help
+	  Defines the array size of the filters.
+	  Must be at least the size of concurrent reads.
+
+endif # CAN_CAN2040

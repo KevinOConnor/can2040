@@ -1,3 +1,6 @@
+name: can2040
 build:
-  cmake-ext: True
-  kconfig-ext: True
+  kconfig: Kconfig
+  cmake: .
+  settings:
+    dts_root: .
