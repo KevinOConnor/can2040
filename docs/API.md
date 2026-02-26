@@ -156,7 +156,7 @@ their callback function.
 
 ## can2040_start
 
-`void can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate, uint32_t gpio_rx, uint32_t gpio_tx)`
+`void can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate, int32_t gpio_rx, int32_t gpio_tx)`
 
 This function starts the main can2040 CAN bus implementation.  The
 provided GPIO pins will be configured and associated with the
@@ -176,11 +176,19 @@ and 47 (for GPIO16 to GPIO47) if both `gpio_rx` and `gpio_tx` are
 between 16 and 47.
 
 The `gpio_tx` parameter specifies the gpio number that is routed to
-the "CAN TX" pin of the CAN bus transceiver.  On rp2040 chips it
-should be between 0 and 29 (for GPIO0 to GPIO29).  On the rp2350 chips
-it may be between 0 and 31 (for GPIO0 to GPIO31), or alternatively
-between 16 and 47 (for GPIO16 to GPIO47) if both `gpio_rx` and
-`gpio_tx` are between 16 and 47.
+the "CAN TX" pin of the CAN bus transceiver (or to `-1` to disable
+transmissions).  On rp2040 chips it should be between 0 and 29 (for
+GPIO0 to GPIO29).  On the rp2350 chips it may be between 0 and 31 (for
+GPIO0 to GPIO31), or alternatively between 16 and 47 (for GPIO16 to
+GPIO47) if both `gpio_rx` and `gpio_tx` are between 16 and 47.
+
+If `gpio_tx` is set to a `-1` then can2040 will run in a "silent
+mode".  That is, it will not transmit or acknowledge messages, but it
+can still report messages successfully sent, received, and
+acknowledged by other nodes on the bus.  If this facility is used, it
+is the caller's responsibility to ensure the canbus transceiver
+hardware is in a recessive transmit state (ie, the actual "gpio_tx"
+wire going to the canbus transceiver should be set to a "high" state).
 
 After calling this function, activity on the CAN bus may result in the
 user specified `can2040_rx_cb` callback being invoked.

@@ -1,6 +1,6 @@
-// Software CANbus implementation for rp2040
+// Software CANbus implementation for rp2040/rp2350
 //
-// Copyright (C) 2022-2025  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2022-2026  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -213,10 +213,13 @@ pio_tx_setup(struct can2040 *cd)
         | can2040_offset_tx_conflict << PIO_SM0_EXECCTRL_WRAP_BOTTOM_LSB);
     sm->shiftctrl = (PIO_SM0_SHIFTCTRL_FJOIN_TX_BITS
                      | PIO_SM0_SHIFTCTRL_AUTOPULL_BITS);
-    sm->pinctrl = (1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
+    uint32_t pinctrl = 0;
+    if (cd->gpio_tx >= 0)
+        pinctrl = (1 << PIO_SM0_PINCTRL_SET_COUNT_LSB
                    | 1 << PIO_SM0_PINCTRL_OUT_COUNT_LSB
                    | gpio_tx << PIO_SM0_PINCTRL_SET_BASE_LSB
                    | gpio_tx << PIO_SM0_PINCTRL_OUT_BASE_LSB);
+    sm->pinctrl = pinctrl;
     sm->instr = 0xe001; // set pins, 1
     sm->instr = 0xe081; // set pindirs, 1
 }
@@ -430,7 +433,8 @@ pio_setup(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate)
     // Map Rx/Tx gpios
     uint32_t pio_func = 6 + cd->pio_num;
     rp2040_gpio_peripheral(cd->gpio_rx, pio_func, 1);
-    rp2040_gpio_peripheral(cd->gpio_tx, pio_func, 0);
+    if (cd->gpio_tx >= 0)
+        rp2040_gpio_peripheral(cd->gpio_tx, pio_func, 0);
 }
 
 
@@ -1349,7 +1353,7 @@ can2040_check_transmit(struct can2040 *cd)
     uint32_t tx_pull_pos = readl(&cd->tx_pull_pos);
     uint32_t tx_push_pos = cd->tx_push_pos;
     uint32_t pending = tx_push_pos - tx_pull_pos;
-    return pending < ARRAY_SIZE(cd->tx_queue);
+    return pending < ARRAY_SIZE(cd->tx_queue) && cd->gpio_tx >= 0;
 }
 
 // API function to transmit a message
@@ -1359,7 +1363,7 @@ can2040_transmit(struct can2040 *cd, struct can2040_msg *msg)
     uint32_t tx_pull_pos = readl(&cd->tx_pull_pos);
     uint32_t tx_push_pos = cd->tx_push_pos;
     uint32_t pending = tx_push_pos - tx_pull_pos;
-    if (pending >= ARRAY_SIZE(cd->tx_queue))
+    if (pending >= ARRAY_SIZE(cd->tx_queue) || cd->gpio_tx < 0)
         // Tx queue full
         return -1;
 
@@ -1448,8 +1452,11 @@ can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb)
 // API function to start CANbus interface
 void
 can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
-              , uint32_t gpio_rx, uint32_t gpio_tx)
+              , int32_t gpio_rx, int32_t gpio_tx)
 {
+    if (IS_RP2350 && ((gpio_rx < 16 && gpio_tx > 31)
+                      || (gpio_rx > 31 && gpio_tx < 16)))
+        gpio_tx = -1;
     cd->gpio_rx = gpio_rx;
     cd->gpio_tx = gpio_tx;
     data_state_clear_bits(cd);

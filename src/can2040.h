@@ -35,7 +35,7 @@ struct can2040_stats {
 void can2040_setup(struct can2040 *cd, uint32_t pio_num);
 void can2040_callback_config(struct can2040 *cd, can2040_rx_cb rx_cb);
 void can2040_start(struct can2040 *cd, uint32_t sys_clock, uint32_t bitrate
-                   , uint32_t gpio_rx, uint32_t gpio_tx);
+                   , int32_t gpio_rx, int32_t gpio_tx);
 void can2040_stop(struct can2040 *cd);
 void can2040_get_statistics(struct can2040 *cd, struct can2040_stats *stats);
 void can2040_pio_irq_handler(struct can2040 *cd);
@@ -61,7 +61,7 @@ struct can2040 {
     // Setup
     uint32_t pio_num;
     void *pio_hw;
-    uint32_t gpio_rx, gpio_tx;
+    int32_t gpio_rx, gpio_tx;
     can2040_rx_cb rx_cb;
     struct can2040_stats stats;
 
